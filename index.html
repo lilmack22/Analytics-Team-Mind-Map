@@ -1,92 +1,4 @@
-"""
-FCV Analytics Team Projects — Interactive digitized version of the whiteboard mind map.
-Each bubble is a project; colored dots show assigned teams; clicking a bubble
-opens a detail panel with more information.
-
-Data files:
-  data/team_members.json  — teammate colors and user-type colors
-  data/projects.json      — node definitions and edges
-"""
-
-import json
-import os
-import streamlit as st
-import streamlit.components.v1 as components
-
-try:
-    from supabase import create_client
-    from dotenv import load_dotenv
-    load_dotenv()
-    _SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-    _SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
-    _supabase = create_client(_SUPABASE_URL, _SUPABASE_KEY) if (_SUPABASE_URL and _SUPABASE_KEY) else None
-except ImportError:
-    _supabase = None
-    _SUPABASE_URL = ""
-    _SUPABASE_KEY = ""
-
-st.set_page_config(
-    page_title="FCV Analytics Team Projects",
-    page_icon="🗺",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
-
-# Remove all Streamlit chrome for an immersive map experience
-st.markdown("""
-<style>
-  #MainMenu, footer, header { visibility: hidden; }
-  .block-container { padding: 0 !important; max-width: 100% !important; }
-  section[data-testid="stSidebar"] { display: none !important; }
-  .stApp { overflow: hidden; }
-</style>
-""", unsafe_allow_html=True)
-
-# ── Load data: Supabase (shared state) → fallback to local JSON files ──────────
-_data_dir = os.path.join(os.path.dirname(__file__), "data")
-_user_conns = []
-
-_db_state = None
-if _supabase:
-    try:
-        _resp = _supabase.table("mind_map_state").select("*").eq("id", "main").execute()
-        if _resp.data:
-            _db_state = _resp.data[0]
-    except Exception:
-        pass
-
-if _db_state:
-    _team     = {"teammates": _db_state["teammates"],  "user_types": _db_state["user_types"]}
-    _projects = {"nodes":     _db_state["nodes"],      "edges":      _db_state["edges"]}
-    _user_conns = _db_state.get("user_connections", [])
-else:
-    with open(os.path.join(_data_dir, "team_members.json"), encoding="utf-8") as _f:
-        _team = json.load(_f)
-    with open(os.path.join(_data_dir, "projects.json"), encoding="utf-8") as _f:
-        _projects = json.load(_f)
-
-# ── Migration: replace old fcv_informed cluster with new goal nodes ────────────
-_OLD_FCV_IDS = {"fcv_informed", "fcv_informed_planning", "fcv_informed_delivery",
-                "fcv_informed_adaptation", "fcv_informed_learning"}
-_existing_ids = {n["id"] for n in _projects["nodes"]}
-if _OLD_FCV_IDS & _existing_ids:
-    _projects["nodes"] = [n for n in _projects["nodes"] if n["id"] not in _OLD_FCV_IDS]
-    with open(os.path.join(_data_dir, "projects.json"), encoding="utf-8") as _mf:
-        _local = json.load(_mf)
-    _GOAL_IDS = {"goals_bg", "goal_planning", "goal_delivery", "goal_adaptation", "goal_learning"}
-    _projects["nodes"].extend(n for n in _local["nodes"] if n["id"] in _GOAL_IDS)
-
-_TEAMMATES_JSON   = json.dumps(_team["teammates"],   ensure_ascii=False)
-_USER_TYPES_JSON  = json.dumps(_team["user_types"],  ensure_ascii=False)
-_NODES_JSON       = json.dumps([n for n in _projects["nodes"] if n.get("type") != "hub"], ensure_ascii=False)
-_EDGES_JSON       = json.dumps(_projects["edges"],   ensure_ascii=False)
-_USER_CONNS_JSON  = json.dumps(_user_conns,          ensure_ascii=False)
-
-# ── HTML template ─────────────────────────────────────────────────────────────
-# Placeholders __TEAMMATES__, __USER_TYPES__, __NODES__, __EDGES__,
-# __USER_CONNS__, __SUPABASE_URL__, __SUPABASE_ANON_KEY__ are replaced
-# below with the JSON-serialised data loaded from Supabase or data/ files.
-MIND_MAP_HTML_TEMPLATE = r"""<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -934,12 +846,83 @@ MIND_MAP_HTML_TEMPLATE = r"""<!DOCTYPE html>
 </div>
 
 <script>
+// ══════════════════════════════════════════════════════════════════
+// STATIC BUILD – boot loader replaces Python/Streamlit data injection
+// Fetches live state from Supabase; falls back to bundled defaults.
+// ══════════════════════════════════════════════════════════════════
+
+const _SB_URL = 'https://kmvisijdbsxqjmgknpwr.supabase.co';
+const _SB_KEY = 'sb_publishable_uzh7T_E6kIPpgZ6fAqk3Cg_vh2UWSqq';
+
+const _DEF_TEAMMATES  = {"Miguel": {"dot": "#E53935", "bg": "#FFEBEE", "border": "#EF9A9A"}, "Lindsey": {"dot": "#FB8C00", "bg": "#FFF3E0", "border": "#FFCC80"}, "Gauri": {"dot": "#43A047", "bg": "#E8F5E9", "border": "#A5D6A7"}, "Lila": {"dot": "#1E88E5", "bg": "#E3F2FD", "border": "#90CAF9"}, "Emmett": {"dot": "#8E24AA", "bg": "#F3E5F5", "border": "#CE93D8"}, "Johan": {"dot": "#9E9E9E", "bg": "#F5F5F5", "border": "#E0E0E0"}, "Tobias": {"dot": "#00897B", "bg": "#E0F2F1", "border": "#80CBC4"}, "Emile": {"dot": "#BDBDBD", "bg": "#FAFAFA", "border": "#E0E0E0"}, "Ryan": {"dot": "#BDBDBD", "bg": "#FAFAFA", "border": "#E0E0E0"}, "Ricardy": {"dot": "#00ACC1", "bg": "#E0F7FA", "border": "#80DEEA"}};
+const _DEF_USER_TYPES = {"CMUs": {"color": "#6495ED"}, "Sr Mgmt": {"color": "#1A237E"}, "FCV Team": {"color": "#00838F"}, "Rest of Bank": {"color": "#FF8F00"}, "Everyone Else": {"color": "#E53935"}};
+const _DEF_NODES      = [{"id": "hoover", "label": "Hoover Model", "x": 950, "y": 285, "type": "project", "w": 148, "h": 52, "people": [{"name": "Gauri", "status": "current"}], "desc": "The Hoover Model — a model that predicts conflict onset and/or escalation at the country level. Produces forward-looking risk scores used in strategic planning."}, {"id": "fcv_data_stack", "label": "FCV Data Stack", "x": 950, "y": 645, "type": "project", "w": 148, "h": 52, "people": [{"name": "Miguel", "status": "current"}], "desc": "The underlying data infrastructure and architecture (pipelines, storage, APIs) that powers all FCV analytics, monitoring, and knowledge products."}, {"id": "risk_monitor", "label": "Risk Monitor", "x": 1040, "y": 150, "type": "project", "w": 138, "h": 52, "people": [{"name": "Miguel", "status": "current"}], "users": ["CMUs", "FCV Team"], "desc": "Real-time risk monitoring system that tracks fragility and conflict indicators — combining information from the predictive model with additional context. Surfaces early warning signals and feeds into the FCS dashboard."}, {"id": "kps_k360", "label": ["Knowledge Packages", "(KP's); K360"], "x": 1184, "y": 690, "type": "project", "w": 175, "h": 65, "people": [{"name": "Lindsey", "status": "current"}, {"name": "Ricardy", "status": "current"}, {"name": "Lila", "status": "current"}], "desc": "Curated knowledge packages (KP's) aligned with the K360 knowledge system. These are documents — including lit review sources, consultation notes, and LLM-produced syntheses of these and other sources — that offer country-specific FCV evidence and recommendations for operational teams."}, {"id": "geo_data_hubs", "label": "Geo Data Hubs", "x": 1310, "y": 528, "type": "project", "w": 145, "h": 52, "people": [{"name": "Miguel", "status": "current"}], "users": ["CMUs", "FCV Team", "Sr Mgmt"], "desc": "Geographic data hubs that aggregate and visualize information from geospatial and other datasets. These platforms allow non-technical staff to generate charts, tables, and other geographic data products that they may want to include in reports or other publications, and/or simply reference for their own monitoring and background knowledge."}, {"id": "conflict_intel", "label": "Conflict Intelligence", "x": 1220, "y": 150, "type": "project", "w": 168, "h": 52, "people": [{"name": "Miguel", "status": "current"}, {"name": "Gauri", "status": "current"}, {"name": "Lila", "status": "want_to_be"}], "desc": "Tailored data work that responds to the needs of teams working on the ground."}, {"id": "risk_scans", "label": "Risk Scans", "x": 1310, "y": 217, "type": "project", "w": 120, "h": 52, "people": [{"name": "Gauri", "status": "current"}], "users": ["CMUs", "FCV Team", "Sr Mgmt"], "desc": "Rapid risk scan products provide updated country and subnational-level fragility and conflict risk summaries to support operational decision-making."}, {"id": "llms", "label": ["LLMs", "FCV Sensitive / Responsive"], "x": 1400, "y": 330, "type": "project", "w": 185, "h": 65, "people": [{"name": "Lindsey", "status": "current"}], "desc": "Integrating the use of LLMs into various tasks produced by the unit with the end goal of making World Bank operations more FCV Sensitive and FCV Responsive. This LLM work encompasses Risk Scans, RRAs, and more."}, {"id": "rra_2", "label": "RRA 2.0", "x": 1580, "y": 690, "type": "project", "w": 110, "h": 52, "people": [{"name": "Lila", "status": "current"}], "users": ["CMUs", "FCV Team"], "desc": "Assistance with defining a new and improved RRA methodology, one compatible with LLM use, and encouraging its adoption."}, {"id": "pol_econ", "label": ["Political Economy", "Analysis Scenarios"], "x": 1760, "y": 690, "type": "project", "w": 178, "h": 65, "people": [{"name": "Lila", "status": "want_to_be"}], "desc": "Strengthening the unit's capabilities with regard to conducting political economy analyses — either in concert with or independent from RRAs. Offering structured frameworks for understanding power dynamics, elite incentives, and associated likely conflict trajectory scenarios. These analyses may inform the adjustment of operations and/or approaches to 'tough conversations' with country governments."}, {"id": "llms_kps", "label": ["LLMs and KPs", "(\"Socratic Agent\")"], "x": 1616, "y": 510, "type": "project", "w": 175, "h": 65, "people": [{"name": "Lindsey", "status": "current"}], "desc": "Developing a 'Socratic Agent' that will integrate LLMs with Collections/KPs to generate questions that help staff to hone the conflict-sensitivity of their projects and plans."}, {"id": "banky_structure", "label": ["Banky Structure", "Pipeline, Rail"], "x": 1580, "y": 150, "type": "project", "w": 155, "h": 65, "people": [{"name": "Gauri", "status": "current"}], "desc": "{Lila has no idea what this is someone pls fill in}"}, {"id": "upgrade_monitor", "label": ["Upgrade Monitor", "Front End for KPs"], "x": 1850, "y": 510, "type": "project", "w": 168, "h": 65, "people": [{"name": "Miguel", "status": "current"}], "desc": "{again not sure what this is someone pls fill in}"}, {"id": "frc_workspace", "label": "FRC Workspace", "x": 1940, "y": 420, "type": "project", "w": 155, "h": 52, "people": [{"name": "Miguel", "status": "current"}, {"name": "Lindsey", "status": "current"}], "desc": "{again not sure what this is someone pls fill in}"}, {"id": "corp_security", "label": ["Corporate Security", "Inputs"], "x": 1760, "y": 150, "type": "project", "w": 165, "h": 65, "people": [{"name": "Gauri", "status": "current"}, {"name": "Lila", "status": "current"}], "desc": "Help to predict where conflict dynamics could evolve to jeopardize the security of Bank staff on Missions or based in FCV-affected countries."}, {"id": "geo_planning", "label": ["Geospatial Planning", "/ Adaptation"], "x": 1850, "y": 330, "type": "project", "w": 175, "h": 65, "people": [{"name": "Miguel", "status": "current"}], "users": ["CMUs", "FCV Team", "Sr Mgmt"], "desc": "Geospatial planning and climate adaptation tools — integrating spatial data layers for conflict-climate nexus analysis, displacement mapping, and resilience programming."}, {"id": "local_data", "label": ["Local Data", "– Surveys", "– GEMS", "– Project"], "x": 1382, "y": 800, "type": "project", "w": 145, "h": 80, "hasTitle": true, "people": [], "desc": "Local data sources — surveys, GEMS, and project-level data inputs feeding into FCV analytics."}, {"id": "fcv_schema", "label": "FCV Schema", "x": 2120, "y": 185, "type": "project", "w": 125, "h": 52, "people": [], "desc": "{Is this the FCS list?}"}, {"id": "research", "label": ["Research", "– Assessing Commitment", "– Trajectory Shifting Reforms", "– Prevention Paper"], "x": 2120, "y": 320, "type": "research", "w": 200, "h": 92, "hasTitle": true, "people": [], "lineAnnotations": {"1": [{"name": "Lila", "status": "want_to_be"}], "2": [{"name": "Lila", "status": "want_to_be"}]}, "desc": "FCV Research Agenda — covering commitment assessments, trajectory-shifting reforms, and the prevention paper."}, {"id": "gaza_reconstruction", "label": "Gaza Reconstruction", "x": 2120, "y": 450, "type": "project", "w": 178, "h": 52, "people": [], "desc": "Analytics and data support for post-conflict reconstruction planning and monitoring in Gaza."}, {"id": "action_labs", "label": "Action Labs", "x": 2120, "y": 560, "type": "sub", "w": 118, "h": 52, "people": [{"name": "Lila", "status": "want_to_be"}], "desc": "Experimental, rapid-iteration analytics labs for testing new FCV data approaches and tools in operational contexts with demand."}, {"id": "dpf_rra_geo", "label": "DPF/RRA Geospatial", "x": 2120, "y": 655, "type": "project", "w": 175, "h": 52, "people": [], "desc": "{Not sure -- someone please fill this in}"}, {"id": "integrated_planning", "label": ["Integrated Planning –", "National / Intl. Actors"], "x": 2120, "y": 770, "type": "sub", "w": 200, "h": 65, "people": [], "desc": "Frameworks and tools for coordinating national and international actors in FCV-context planning and programming."}, {"id": "goals_bg", "label": "FCV OUTCOMES", "x": 2320, "y": 460, "type": "goals_bg", "w": 220, "h": 320, "people": [], "desc": "The four FCV-informed outcome goals that every project in this map serves. Connect any project node to one or more of these goals using the arrow tool."}, {"id": "goal_planning", "label": "Planning", "x": 2320, "y": 340, "type": "goal", "w": 180, "h": 52, "people": [], "desc": "FCV-informed Planning — integrating conflict-sensitivity and fragility awareness into operational planning phases."}, {"id": "goal_delivery", "label": "Delivery", "x": 2320, "y": 420, "type": "goal", "w": 180, "h": 52, "people": [], "desc": "FCV-informed Delivery — ensuring project delivery adapts to conflict dynamics and fragility conditions on the ground."}, {"id": "goal_adaptation", "label": "Adaptation", "x": 2320, "y": 500, "type": "goal", "w": 180, "h": 52, "people": [], "desc": "FCV-informed Adaptation — continuously adjusting operations and strategies based on evolving conflict and fragility contexts."}, {"id": "goal_learning", "label": "Learning", "x": 2320, "y": 580, "type": "goal", "w": 180, "h": 52, "people": [], "desc": "FCV-informed Learning — capturing institutional lessons and building durable knowledge from FCV-context operations."}];
+const _DEF_EDGES      = [];
+
+const _OLD_FCV_IDS = new Set(['fcv_informed','fcv_informed_planning',
+  'fcv_informed_delivery','fcv_informed_adaptation','fcv_informed_learning']);
+const _GOAL_IDS = new Set(['goals_bg','goal_planning','goal_delivery',
+  'goal_adaptation','goal_learning']);
+
+// Globals set by _loadData() before the rest of the app runs
+let TEAMMATES, USER_TYPES, NODES, EDGES;
+let _savedUserConns = [];
+
+async function _loadData() {
+  if (_SB_URL && _SB_KEY) {
+    try {
+      const resp = await fetch(
+        `${_SB_URL}/rest/v1/mind_map_state?id=eq.main&select=*`,
+        { headers: { apikey: _SB_KEY, Authorization: `Bearer ${_SB_KEY}` } }
+      );
+      if (resp.ok) {
+        const rows = await resp.json();
+        if (rows && rows[0]) {
+          const row = rows[0];
+          TEAMMATES       = row.teammates        || _DEF_TEAMMATES;
+          USER_TYPES      = row.user_types       || _DEF_USER_TYPES;
+          NODES           = (row.nodes           || _DEF_NODES).slice();
+          EDGES           = row.edges            || _DEF_EDGES;
+          _savedUserConns = row.user_connections || [];
+          // Migration: remove stale fcv_informed cluster, add goal nodes
+          if (NODES.some(n => _OLD_FCV_IDS.has(n.id))) {
+            NODES = NODES.filter(n => !_OLD_FCV_IDS.has(n.id));
+            const existing = new Set(NODES.map(n => n.id));
+            _DEF_NODES.filter(n => _GOAL_IDS.has(n.id) && !existing.has(n.id))
+                      .forEach(n => NODES.push(n));
+          }
+          NODES = NODES.filter(n => n.type !== 'hub');
+          return;
+        }
+      }
+    } catch(e) {
+      console.warn('Supabase load failed – using bundled defaults:', e);
+    }
+  }
+  // Fallback: use bundled JSON defaults
+  TEAMMATES  = _DEF_TEAMMATES;
+  USER_TYPES = _DEF_USER_TYPES;
+  NODES      = _DEF_NODES.filter(n => n.type !== 'hub');
+  EDGES      = _DEF_EDGES;
+}
+
+// Show loading overlay while we await the first fetch
+(function showLoader() {
+  const el = document.getElementById('_boot_loader');
+  if (el) el.style.display = 'flex';
+})();
+
+_loadData().then(function () {
+  const el = document.getElementById('_boot_loader');
+  if (el) el.remove();
+
+
 // ════════════════════════════════════════════════════
-// DATA  (loaded from data/ JSON files via Python)
+// DATA  (loaded from Supabase or bundled defaults by _loadData)
 // ════════════════════════════════════════════════════
 
-const TEAMMATES  = __TEAMMATES__;
-const USER_TYPES = __USER_TYPES__;
+// TEAMMATES — set by _loadData() boot loader
+// USER_TYPES — set by _loadData() boot loader
 
 const NODE_STYLES = {
   hub:       { fill: "#E4E6EA", stroke: "#C4C7CE", textColor: "#000000", fw: "500", fs: "14"   },
@@ -984,8 +967,8 @@ const CB_NODE_STYLE_OVERRIDES = {
 const _origUserColors         = {};
 const _origNodeStyleOverrides = {};
 
-const NODES = __NODES__;
-const EDGES = __EDGES__;
+// NODES — set by _loadData() boot loader
+// EDGES — set by _loadData() boot loader
 
 // Restore any user-edited descriptions saved in a previous session
 (function loadSavedDescs() {
@@ -4417,8 +4400,8 @@ function adminApply() {
 // SUPABASE SYNC
 // ════════════════════════════════════════════════════
 
-const _SB_URL = '__SUPABASE_URL__';
-const _SB_KEY = '__SUPABASE_ANON_KEY__';
+// _SB_URL — defined in boot loader
+// _SB_KEY — defined in boot loader
 
 let _saveTimer = null;
 
@@ -4477,7 +4460,7 @@ function saveToSupabase() {
 
 // Restore user-drawn connections that were saved in a previous session.
 (function restoreUserConns() {
-  const saved = __USER_CONNS__;
+  const saved = _savedUserConns;
   if (!saved || !saved.length) return;
   saved.forEach(c => {
     if (!nMap[c.fromId] || !nMap[c.toId]) return;
@@ -4488,21 +4471,52 @@ function saveToSupabase() {
   });
 })();
 
+
+  // ── Expose onclick-referenced functions to window ──────────────────────────
+  if (typeof adminApply !== 'undefined') window.adminApply = adminApply;
+  if (typeof cancelAdminPw !== 'undefined') window.cancelAdminPw = cancelAdminPw;
+  if (typeof cancelGroup !== 'undefined') window.cancelGroup = cancelGroup;
+  if (typeof clearGroupSel !== 'undefined') window.clearGroupSel = clearGroupSel;
+  if (typeof clearMultiSel !== 'undefined') window.clearMultiSel = clearMultiSel;
+  if (typeof closePanel !== 'undefined') window.closePanel = closePanel;
+  if (typeof confirmAddLegendItem !== 'undefined') window.confirmAddLegendItem = confirmAddLegendItem;
+  if (typeof confirmAddNode !== 'undefined') window.confirmAddNode = confirmAddNode;
+  if (typeof confirmAdminPw !== 'undefined') window.confirmAdminPw = confirmAdminPw;
+  if (typeof confirmGroup !== 'undefined') window.confirmGroup = confirmGroup;
+  if (typeof confirmSelfAssign !== 'undefined') window.confirmSelfAssign = confirmSelfAssign;
+  if (typeof createBlobGroup !== 'undefined') window.createBlobGroup = createBlobGroup;
+  if (typeof deleteCurrentNode !== 'undefined') window.deleteCurrentNode = deleteCurrentNode;
+  if (typeof doZoom !== 'undefined') window.doZoom = doZoom;
+  if (typeof exportMap !== 'undefined') window.exportMap = exportMap;
+  if (typeof hideAddLegendModal !== 'undefined') window.hideAddLegendModal = hideAddLegendModal;
+  if (typeof hideAddNodeModal !== 'undefined') window.hideAddNodeModal = hideAddNodeModal;
+  if (typeof resetView !== 'undefined') window.resetView = resetView;
+  if (typeof setAddNodeDotType !== 'undefined') window.setAddNodeDotType = setAddNodeDotType;
+  if (typeof setArrowStyle !== 'undefined') window.setArrowStyle = setArrowStyle;
+  if (typeof setGroupColor !== 'undefined') window.setGroupColor = setGroupColor;
+  if (typeof setMode !== 'undefined') window.setMode = setMode;
+  if (typeof setSelfAssignType !== 'undefined') window.setSelfAssignType = setSelfAssignType;
+  if (typeof showAddNodeModal !== 'undefined') window.showAddNodeModal = showAddNodeModal;
+  if (typeof toggleAdminMode !== 'undefined') window.toggleAdminMode = toggleAdminMode;
+  if (typeof toggleCB !== 'undefined') window.toggleCB = toggleCB;
+  if (typeof toggleExportMenu !== 'undefined') window.toggleExportMenu = toggleExportMenu;
+  if (typeof toggleLasso !== 'undefined') window.toggleLasso = toggleLasso;
+});  // end _loadData().then
+
 </script>
+<div id="_boot_loader" style="
+  display:none; position:fixed; inset:0; z-index:9999;
+  background:#f5f7fc; align-items:center; justify-content:center;
+  flex-direction:column; gap:16px; font-family:sans-serif; color:#555;">
+  <svg width="40" height="40" viewBox="0 0 40 40">
+    <circle cx="20" cy="20" r="16" fill="none" stroke="#c5cfe8" stroke-width="4"/>
+    <circle cx="20" cy="20" r="16" fill="none" stroke="#7eb3f5" stroke-width="4"
+      stroke-dasharray="60 44" stroke-linecap="round">
+      <animateTransform attributeName="transform" type="rotate"
+        from="0 20 20" to="360 20 20" dur="0.9s" repeatCount="indefinite"/>
+    </circle>
+  </svg>
+  <span style="font-size:14px; font-weight:500; color:#9ca3af">Loading map…</span>
+</div>
 </body>
-</html>"""
-
-# ── Inject data into template ──────────────────────────────────────────────────
-MIND_MAP_HTML = (
-    MIND_MAP_HTML_TEMPLATE
-    .replace("__TEAMMATES__",        _TEAMMATES_JSON)
-    .replace("__USER_TYPES__",       _USER_TYPES_JSON)
-    .replace("__NODES__",            _NODES_JSON)
-    .replace("__EDGES__",            _EDGES_JSON)
-    .replace("__USER_CONNS__",       _USER_CONNS_JSON)
-    .replace("__SUPABASE_URL__",     _SUPABASE_URL)
-    .replace("__SUPABASE_ANON_KEY__", _SUPABASE_KEY)
-
-)
-
-components.html(MIND_MAP_HTML, height=890, scrolling=False)
+</html>

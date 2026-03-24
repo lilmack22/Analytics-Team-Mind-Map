@@ -1,0 +1,13 @@
+# Secrets — never commit
+.env
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+
+# Build script (only needed locally)
+_build_static.py
