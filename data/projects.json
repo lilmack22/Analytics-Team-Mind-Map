@@ -1,0 +1,224 @@
+{
+  "nodes": [
+    {
+      "id": "hoover",
+      "label": "Hoover Model",
+      "x": 950, "y": 285, "type": "project", "w": 148, "h": 52,
+      "people": [{"name": "Gauri", "status": "current"}],
+      "desc": "The Hoover Model — a model that predicts conflict onset and/or escalation at the country level. Produces forward-looking risk scores used in strategic planning."
+    },
+    {
+      "id": "fcv_data_stack",
+      "label": "FCV Data Stack",
+      "x": 950, "y": 645, "type": "project", "w": 148, "h": 52,
+      "people": [{"name": "Miguel", "status": "current"}],
+      "desc": "The underlying data infrastructure and architecture (pipelines, storage, APIs) that powers all FCV analytics, monitoring, and knowledge products."
+    },
+    {
+      "id": "risk_monitor",
+      "label": "Risk Monitor",
+      "x": 1040, "y": 150, "type": "project", "w": 138, "h": 52,
+      "people": [{"name": "Miguel", "status": "current"}],
+      "users": ["CMUs", "FCV Team"],
+      "desc": "Real-time risk monitoring system that tracks fragility and conflict indicators — combining information from the predictive model with additional context. Surfaces early warning signals and feeds into the FCS dashboard."
+    },
+    {
+      "id": "kps_k360",
+      "label": ["Knowledge Packages", "(KP's); K360"],
+      "x": 1184, "y": 690, "type": "project", "w": 175, "h": 65,
+      "people": [
+        {"name": "Lindsey", "status": "current"},
+        {"name": "Ricardy", "status": "current"},
+        {"name": "Lila",    "status": "current"}
+      ],
+      "desc": "Curated knowledge packages (KP's) aligned with the K360 knowledge system. These are documents — including lit review sources, consultation notes, and LLM-produced syntheses of these and other sources — that offer country-specific FCV evidence and recommendations for operational teams."
+    },
+    {
+      "id": "geo_data_hubs",
+      "label": "Geo Data Hubs",
+      "x": 1310, "y": 528, "type": "project", "w": 145, "h": 52,
+      "people": [{"name": "Miguel", "status": "current"}],
+      "users": ["CMUs", "FCV Team", "Sr Mgmt"],
+      "desc": "Geographic data hubs that aggregate and visualize information from geospatial and other datasets. These platforms allow non-technical staff to generate charts, tables, and other geographic data products that they may want to include in reports or other publications, and/or simply reference for their own monitoring and background knowledge."
+    },
+    {
+      "id": "conflict_intel",
+      "label": "Conflict Intelligence",
+      "x": 1220, "y": 150, "type": "project", "w": 168, "h": 52,
+      "people": [
+        {"name": "Miguel", "status": "current"},
+        {"name": "Gauri",  "status": "current"},
+        {"name": "Lila",   "status": "want_to_be"}
+      ],
+      "desc": "Tailored data work that responds to the needs of teams working on the ground."
+    },
+    {
+      "id": "risk_scans",
+      "label": "Risk Scans",
+      "x": 1310, "y": 217, "type": "project", "w": 120, "h": 52,
+      "people": [{"name": "Gauri", "status": "current"}],
+      "users": ["CMUs", "FCV Team", "Sr Mgmt"],
+      "desc": "Rapid risk scan products provide updated country and subnational-level fragility and conflict risk summaries to support operational decision-making."
+    },
+    {
+      "id": "llms",
+      "label": ["LLMs", "FCV Sensitive / Responsive"],
+      "x": 1400, "y": 330, "type": "project", "w": 185, "h": 65,
+      "people": [{"name": "Lindsey", "status": "current"}],
+      "desc": "Integrating the use of LLMs into various tasks produced by the unit with the end goal of making World Bank operations more FCV Sensitive and FCV Responsive. This LLM work encompasses Risk Scans, RRAs, and more."
+    },
+    {
+      "id": "rra_2",
+      "label": "RRA 2.0",
+      "x": 1580, "y": 690, "type": "project", "w": 110, "h": 52,
+      "people": [{"name": "Lila", "status": "current"}],
+      "users": ["CMUs", "FCV Team"],
+      "desc": "Assistance with defining a new and improved RRA methodology, one compatible with LLM use, and encouraging its adoption."
+    },
+    {
+      "id": "pol_econ",
+      "label": ["Political Economy", "Analysis Scenarios"],
+      "x": 1760, "y": 690, "type": "project", "w": 178, "h": 65,
+      "people": [{"name": "Lila", "status": "want_to_be"}],
+      "desc": "Strengthening the unit's capabilities with regard to conducting political economy analyses — either in concert with or independent from RRAs. Offering structured frameworks for understanding power dynamics, elite incentives, and associated likely conflict trajectory scenarios. These analyses may inform the adjustment of operations and/or approaches to 'tough conversations' with country governments."
+    },
+    {
+      "id": "llms_kps",
+      "label": ["LLMs and KPs", "(\"Socratic Agent\")"],
+      "x": 1616, "y": 510, "type": "project", "w": 175, "h": 65,
+      "people": [{"name": "Lindsey", "status": "current"}],
+      "desc": "Developing a 'Socratic Agent' that will integrate LLMs with Collections/KPs to generate questions that help staff to hone the conflict-sensitivity of their projects and plans."
+    },
+    {
+      "id": "banky_structure",
+      "label": ["Banky Structure", "Pipeline, Rail"],
+      "x": 1580, "y": 150, "type": "project", "w": 155, "h": 65,
+      "people": [{"name": "Gauri", "status": "current"}],
+      "desc": "{Lila has no idea what this is someone pls fill in}"
+    },
+    {
+      "id": "upgrade_monitor",
+      "label": ["Upgrade Monitor", "Front End for KPs"],
+      "x": 1850, "y": 510, "type": "project", "w": 168, "h": 65,
+      "people": [{"name": "Miguel", "status": "current"}],
+      "desc": "{again not sure what this is someone pls fill in}"
+    },
+    {
+      "id": "frc_workspace",
+      "label": "FRC Workspace",
+      "x": 1940, "y": 420, "type": "project", "w": 155, "h": 52,
+      "people": [
+        {"name": "Miguel",  "status": "current"},
+        {"name": "Lindsey", "status": "current"}
+      ],
+      "desc": "{again not sure what this is someone pls fill in}"
+    },
+    {
+      "id": "corp_security",
+      "label": ["Corporate Security", "Inputs"],
+      "x": 1760, "y": 150, "type": "project", "w": 165, "h": 65,
+      "people": [
+        {"name": "Gauri", "status": "current"},
+        {"name": "Lila",  "status": "current"}
+      ],
+      "desc": "Help to predict where conflict dynamics could evolve to jeopardize the security of Bank staff on Missions or based in FCV-affected countries."
+    },
+    {
+      "id": "geo_planning",
+      "label": ["Geospatial Planning", "/ Adaptation"],
+      "x": 1850, "y": 330, "type": "project", "w": 175, "h": 65,
+      "people": [{"name": "Miguel", "status": "current"}],
+      "users": ["CMUs", "FCV Team", "Sr Mgmt"],
+      "desc": "Geospatial planning and climate adaptation tools — integrating spatial data layers for conflict-climate nexus analysis, displacement mapping, and resilience programming."
+    },
+    {
+      "id": "local_data",
+      "label": ["Local Data", "– Surveys", "– GEMS", "– Project"],
+      "x": 1382, "y": 800, "type": "project", "w": 145, "h": 80, "hasTitle": true,
+      "people": [],
+      "desc": "Local data sources — surveys, GEMS, and project-level data inputs feeding into FCV analytics."
+    },
+    {
+      "id": "fcv_schema",
+      "label": "FCV Schema",
+      "x": 2120, "y": 185, "type": "project", "w": 125, "h": 52,
+      "people": [],
+      "desc": "{Is this the FCS list?}"
+    },
+    {
+      "id": "research",
+      "label": ["Research", "– Assessing Commitment", "– Trajectory Shifting Reforms", "– Prevention Paper"],
+      "x": 2120, "y": 320, "type": "research", "w": 200, "h": 92, "hasTitle": true,
+      "people": [],
+      "lineAnnotations": {
+        "1": [{"name": "Lila", "status": "want_to_be"}],
+        "2": [{"name": "Lila", "status": "want_to_be"}]
+      },
+      "desc": "FCV Research Agenda — covering commitment assessments, trajectory-shifting reforms, and the prevention paper."
+    },
+    {
+      "id": "gaza_reconstruction",
+      "label": "Gaza Reconstruction",
+      "x": 2120, "y": 450, "type": "project", "w": 178, "h": 52,
+      "people": [],
+      "desc": "Analytics and data support for post-conflict reconstruction planning and monitoring in Gaza."
+    },
+    {
+      "id": "action_labs",
+      "label": "Action Labs",
+      "x": 2120, "y": 560, "type": "sub", "w": 118, "h": 52,
+      "people": [{"name": "Lila", "status": "want_to_be"}],
+      "desc": "Experimental, rapid-iteration analytics labs for testing new FCV data approaches and tools in operational contexts with demand."
+    },
+    {
+      "id": "dpf_rra_geo",
+      "label": "DPF/RRA Geospatial",
+      "x": 2120, "y": 655, "type": "project", "w": 175, "h": 52,
+      "people": [],
+      "desc": "{Not sure -- someone please fill this in}"
+    },
+    {
+      "id": "integrated_planning",
+      "label": ["Integrated Planning –", "National / Intl. Actors"],
+      "x": 2120, "y": 770, "type": "sub", "w": 200, "h": 65,
+      "people": [],
+      "desc": "Frameworks and tools for coordinating national and international actors in FCV-context planning and programming."
+    },
+    {
+      "id": "goals_bg",
+      "label": "FCV OUTCOMES",
+      "x": 2320, "y": 460, "type": "goals_bg", "w": 220, "h": 320,
+      "people": [],
+      "desc": "The four FCV-informed outcome goals that every project in this map serves. Connect any project node to one or more of these goals using the arrow tool."
+    },
+    {
+      "id": "goal_planning",
+      "label": "Planning",
+      "x": 2320, "y": 340, "type": "goal", "w": 180, "h": 52,
+      "people": [],
+      "desc": "FCV-informed Planning — integrating conflict-sensitivity and fragility awareness into operational planning phases."
+    },
+    {
+      "id": "goal_delivery",
+      "label": "Delivery",
+      "x": 2320, "y": 420, "type": "goal", "w": 180, "h": 52,
+      "people": [],
+      "desc": "FCV-informed Delivery — ensuring project delivery adapts to conflict dynamics and fragility conditions on the ground."
+    },
+    {
+      "id": "goal_adaptation",
+      "label": "Adaptation",
+      "x": 2320, "y": 500, "type": "goal", "w": 180, "h": 52,
+      "people": [],
+      "desc": "FCV-informed Adaptation — continuously adjusting operations and strategies based on evolving conflict and fragility contexts."
+    },
+    {
+      "id": "goal_learning",
+      "label": "Learning",
+      "x": 2320, "y": 580, "type": "goal", "w": 180, "h": 52,
+      "people": [],
+      "desc": "FCV-informed Learning — capturing institutional lessons and building durable knowledge from FCV-context operations."
+    }
+  ],
+  "edges": []
+}

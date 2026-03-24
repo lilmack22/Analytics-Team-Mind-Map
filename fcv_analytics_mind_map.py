@@ -1,0 +1,4566 @@
+"""
+FCV Analytics Team Projects — Interactive digitized version of the whiteboard mind map.
+Each bubble is a project; colored dots show assigned teams; clicking a bubble
+opens a detail panel with more information.
+
+Data files:
+  data/team_members.json  — teammate colors and user-type colors
+  data/projects.json      — node definitions and edges
+"""
+
+import json
+import os
+import streamlit as st
+import streamlit.components.v1 as components
+
+try:
+    from supabase import create_client
+    from dotenv import load_dotenv
+    load_dotenv()
+    _SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+    _SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+    _supabase = create_client(_SUPABASE_URL, _SUPABASE_KEY) if (_SUPABASE_URL and _SUPABASE_KEY) else None
+except ImportError:
+    _supabase = None
+    _SUPABASE_URL = ""
+    _SUPABASE_KEY = ""
+
+st.set_page_config(
+    page_title="FCV Analytics Team Projects",
+    page_icon="🗺",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
+# Remove all Streamlit chrome for an immersive map experience
+st.markdown("""
+<style>
+  #MainMenu, footer, header { visibility: hidden; }
+  .block-container { padding: 0 !important; max-width: 100% !important; }
+  section[data-testid="stSidebar"] { display: none !important; }
+  .stApp { overflow: hidden; }
+</style>
+""", unsafe_allow_html=True)
+
+# ── Load data: Supabase (shared state) → fallback to local JSON files ──────────
+_data_dir = os.path.join(os.path.dirname(__file__), "data")
+_user_conns = []
+
+_db_state = None
+if _supabase:
+    try:
+        _resp = _supabase.table("mind_map_state").select("*").eq("id", "main").execute()
+        if _resp.data:
+            _db_state = _resp.data[0]
+    except Exception:
+        pass
+
+if _db_state:
+    _team     = {"teammates": _db_state["teammates"],  "user_types": _db_state["user_types"]}
+    _projects = {"nodes":     _db_state["nodes"],      "edges":      _db_state["edges"]}
+    _user_conns = _db_state.get("user_connections", [])
+else:
+    with open(os.path.join(_data_dir, "team_members.json"), encoding="utf-8") as _f:
+        _team = json.load(_f)
+    with open(os.path.join(_data_dir, "projects.json"), encoding="utf-8") as _f:
+        _projects = json.load(_f)
+
+# ── Migration: replace old fcv_informed cluster with new goal nodes ────────────
+_OLD_FCV_IDS = {"fcv_informed", "fcv_informed_planning", "fcv_informed_delivery",
+                "fcv_informed_adaptation", "fcv_informed_learning"}
+_existing_ids = {n["id"] for n in _projects["nodes"]}
+if _OLD_FCV_IDS & _existing_ids:
+    _projects["nodes"] = [n for n in _projects["nodes"] if n["id"] not in _OLD_FCV_IDS]
+    with open(os.path.join(_data_dir, "projects.json"), encoding="utf-8") as _mf:
+        _local = json.load(_mf)
+    _GOAL_IDS = {"goals_bg", "goal_planning", "goal_delivery", "goal_adaptation", "goal_learning"}
+    _projects["nodes"].extend(n for n in _local["nodes"] if n["id"] in _GOAL_IDS)
+
+_TEAMMATES_JSON   = json.dumps(_team["teammates"],   ensure_ascii=False)
+_USER_TYPES_JSON  = json.dumps(_team["user_types"],  ensure_ascii=False)
+_NODES_JSON       = json.dumps([n for n in _projects["nodes"] if n.get("type") != "hub"], ensure_ascii=False)
+_EDGES_JSON       = json.dumps(_projects["edges"],   ensure_ascii=False)
+_USER_CONNS_JSON  = json.dumps(_user_conns,          ensure_ascii=False)
+
+# ── HTML template ─────────────────────────────────────────────────────────────
+# Placeholders __TEAMMATES__, __USER_TYPES__, __NODES__, __EDGES__,
+# __USER_CONNS__, __SUPABASE_URL__, __SUPABASE_ANON_KEY__ are replaced
+# below with the JSON-serialised data loaded from Supabase or data/ files.
+MIND_MAP_HTML_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FCV Analytics Team Projects</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: linear-gradient(145deg, #f2ede6 0%, #ede8e0 50%, #f0ece5 100%);
+    overflow: hidden;
+    height: 100vh; width: 100vw;
+  }
+
+  #svg-wrap { position: relative; width: 100vw; height: 100vh; cursor: grab; user-select: none; }
+  #svg-wrap:active { cursor: grabbing; }
+  #svg-wrap > svg { width: 100%; height: 100%; }
+
+  .edge       { fill: none; stroke: #c5cfe8; stroke-width: 1.5; opacity: 0.55; }
+  .edge-hub   { fill: none; stroke: #7eb3f5; stroke-width: 2;   opacity: 0.7;  }
+
+  .node { cursor: pointer; }
+  .node-bg { transition: filter 0.15s; }
+  .node:hover .node-bg { filter: brightness(0.93) drop-shadow(0 4px 10px rgba(0,0,0,0.15)); }
+
+  /* ── Detail panel ── */
+  #panel {
+    position: fixed; top: 0; right: -440px;
+    width: 420px; height: 100vh;
+    background: #fff;
+    box-shadow: -8px 0 40px rgba(0,0,0,0.13);
+    transition: right 0.35s cubic-bezier(0.4,0,0.2,1);
+    z-index: 300;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  #panel.open { right: 0; }
+
+  #panel-header {
+    padding: 32px 28px 22px;
+    border-bottom: 1px solid #f0f0f0;
+    position: relative;
+    background: linear-gradient(135deg, #f8faff 0%, #fff 100%);
+  }
+  #panel-close {
+    position: absolute; top: 18px; right: 18px;
+    background: #f0f2f7; border: none; border-radius: 50%;
+    width: 34px; height: 34px; font-size: 16px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: #555; transition: background 0.2s;
+  }
+  #panel-close:hover { background: #e0e4ef; }
+
+  #panel-delete {
+    position: absolute; top: 18px; right: 60px;
+    background: #f0f2f7; border: none; border-radius: 50%;
+    width: 34px; height: 34px; font-size: 15px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: #c0392b; transition: background 0.2s, color 0.2s;
+  }
+  #panel-delete:hover { background: #fde8e8; color: #a02020; }
+
+  #panel-type-tag {
+    display: inline-block;
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.09em; color: #7b8cbc;
+    background: #f0f3fc; border-radius: 6px;
+    padding: 3px 9px; margin-bottom: 10px;
+  }
+  #panel-title {
+    font-size: 21px; font-weight: 700; color: #111827;
+    line-height: 1.3;
+    border-radius: 6px;
+    padding: 3px 6px;
+    margin: -3px -6px;
+    outline: none;
+    transition: background 0.15s, box-shadow 0.15s;
+    cursor: text;
+    white-space: pre-wrap;
+  }
+  #panel-title:hover { background: #f0f3fc; }
+  #panel-title:focus { background: #f0f3fc; box-shadow: 0 0 0 2px #90CAF9; }
+
+  #panel-body { padding: 24px 28px; flex: 1; overflow-y: auto; }
+
+  #panel-people { margin-bottom: 22px; }
+  #panel-people h4 {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.09em; color: #9ca3af; margin-bottom: 10px;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 5px 13px; border-radius: 999px; font-size: 12px;
+    font-weight: 600; margin: 3px; border: 1.5px solid;
+  }
+  .badge-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .badge-remove {
+    margin-left: 2px; margin-right: -6px;
+    background: none; border: none; cursor: pointer;
+    font-size: 11px; line-height: 1; color: inherit; opacity: 0.45;
+    padding: 0 2px; border-radius: 50%;
+    transition: opacity 0.15s, background 0.15s;
+  }
+  .badge-remove:hover { opacity: 1; background: rgba(0,0,0,0.10); }
+
+  #panel-desc {
+    font-size: 14px; line-height: 1.82; color: #374151;
+    width: 100%; min-height: 80px;
+    border: 1.5px solid transparent; border-radius: 8px;
+    padding: 8px 10px; resize: vertical;
+    background: transparent; font-family: inherit;
+    transition: border-color 0.15s, background 0.15s;
+    outline: none;
+  }
+  #panel-desc:hover { border-color: #e0e4ef; background: #f8faff; }
+  #panel-desc:focus { border-color: #90CAF9; background: #f8faff; }
+
+  /* ── Legend container ── */
+  #legend-container {
+    position: fixed; bottom: 22px; left: 22px;
+    display: flex; flex-direction: row; align-items: flex-end; gap: 12px;
+    z-index: 200;
+  }
+  #legend, #type-legend, #users-legend, #groups-legend {
+    background: rgba(255,255,255,0.96);
+    border-radius: 14px; padding: 16px 20px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.10);
+    backdrop-filter: blur(6px);
+  }
+  /* ── Inline dot key inside Team Members legend ── */
+  #dot-key {
+    display: flex; flex-direction: column; gap: 6px;
+    background: rgba(0,0,0,0.04); border-radius: 7px;
+    padding: 7px 10px; margin-bottom: 8px;
+  }
+  .dot-key-row {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 10.5px; color: #6b7280; font-weight: 500;
+    white-space: nowrap;
+  }
+  #legend h4, #type-legend h4, #users-legend h4, #groups-legend h4 {
+    font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.1em; color: #9ca3af; margin-bottom: 11px;
+    cursor: default; display: flex; align-items: center; justify-content: space-between;
+    transition: opacity 0.2s;
+  }
+  #legend h4:hover, #type-legend h4:hover, #users-legend h4:hover { opacity: 0.7; }
+  .grp-row { display: flex; align-items: center; gap: 9px; margin: 6px 0; font-size: 12.5px; color: #374151; font-weight: 500; }
+  .grp-row-dot { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+  .layer-eye { font-size: 11px; font-weight: 400; text-transform: none;
+    letter-spacing: 0; opacity: 0.55; flex-shrink: 0; }
+  .layer-hidden > h4 { opacity: 0.45; }
+  /* ── Layer visibility toggles ── */
+  #svg-wrap.hide-dots .dot-marker { display: none; }
+  #svg-wrap.hide-user-bars .user-bar { display: none; }
+  #svg-wrap.hide-type-colors .type-fill { fill: #f0f2f5 !important; }
+  #svg-wrap.hide-type-colors .type-text { fill: #999999 !important; }
+  .leg-row { display: flex; align-items: center; gap: 9px; margin: 6px 0; font-size: 12.5px; color: #374151; font-weight: 500; }
+  .leg-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .dot-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 6px 0;
+    font-size: 12.5px;
+    color: #374151;
+    font-weight: 500;
+    white-space: normal;
+    cursor: default;
+    user-select: none;
+    pointer-events: none;
+  }
+  .dot-row svg { width: 13px; height: 13px; flex: 0 0 13px; }
+  .dot-row-label { line-height: 1.25; }
+  .type-row { display: flex; align-items: center; gap: 9px; margin: 6px 0; font-size: 12.5px; color: #374151; font-weight: 500; }
+  .type-swatch { width: 22px; height: 14px; border-radius: 4px; flex-shrink: 0; border: 1.5px solid; }
+  .user-row { display: flex; align-items: center; gap: 9px; margin: 6px 0; font-size: 12.5px; color: #374151; font-weight: 500; }
+  .user-ring { width: 22px; height: 14px; border-radius: 4px; flex-shrink: 0; }
+
+  /* ── Legend color-reassignment swatches ── */
+  .leg-dot, .type-swatch, .user-ring { transition: transform 0.12s, box-shadow 0.12s; }
+  .leg-dot:hover {
+    transform: scale(1.3); cursor: pointer;
+    box-shadow: 0 0 0 2.5px rgba(80,100,200,0.5);
+  }
+  .type-swatch:hover, .user-ring:hover {
+    transform: scale(1.13); cursor: pointer;
+    box-shadow: 0 0 0 2.5px rgba(80,100,200,0.5);
+  }
+
+  /* ── Legend filtering ── */
+  .leg-row, .type-row, .user-row {
+    cursor: pointer;
+    border-radius: 7px;
+    padding: 3px 7px;
+    margin: 3px -7px;
+    transition: background 0.15s, opacity 0.15s;
+    user-select: none;
+  }
+  .leg-row:hover, .type-row:hover, .user-row:hover {
+    background: rgba(0,0,0,0.06);
+  }
+  .leg-row.filter-active, .type-row.filter-active, .user-row.filter-active {
+    background: rgba(80,100,200,0.13);
+    outline: 1.5px solid rgba(80,100,200,0.30);
+  }
+  .leg-row.filter-inactive, .type-row.filter-inactive, .user-row.filter-inactive {
+    opacity: 0.4;
+  }
+
+
+  /* ── Zoom controls ── */
+  #zoom-ctrl {
+    position: fixed; bottom: 22px; right: 22px;
+    display: flex; flex-direction: column; gap: 6px; z-index: 200;
+  }
+  .zbtn {
+    width: 40px; height: 40px; background: rgba(255,255,255,0.96);
+    border: 1px solid #e0e4ef; border-radius: 10px;
+    font-size: 19px; cursor: pointer; display: flex;
+    align-items: center; justify-content: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08); color: #374151;
+    transition: all 0.18s;
+  }
+  .zbtn:hover { background: #f0f3fc; box-shadow: 0 4px 14px rgba(0,0,0,0.12); }
+
+  /* ── Hint ── */
+  #hint {
+    position: fixed; top: 18px; right: 22px;
+    font-size: 12px; color: #9ca3af;
+    background: rgba(255,255,255,0.9);
+    padding: 8px 14px; border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.07);
+    z-index: 200;
+  }
+
+  /* ── Toolbar ── */
+  #toolbar {
+    position: fixed; top: 18px; left: 22px;
+    display: flex; align-items: center; gap: 6px;
+    background: rgba(255,255,255,0.96);
+    border-radius: 12px; padding: 8px 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.10);
+    backdrop-filter: blur(6px);
+    z-index: 200; user-select: none;
+  }
+  .tool-btn {
+    width: 34px; height: 34px;
+    border: 1.5px solid #e0e4ef; border-radius: 8px;
+    background: #fff; cursor: pointer; font-size: 17px;
+    display: flex; align-items: center; justify-content: center;
+    color: #374151; transition: all 0.15s; line-height: 1;
+  }
+  .tool-btn:hover { background: #f0f3fc; border-color: #c0c8e8; }
+  .tool-btn.active { background: #e8eeff; border-color: #7b8cbc; color: #3a4fa0; }
+  .tool-sep { width: 1px; height: 24px; background: #e0e4ef; margin: 0 2px; flex-shrink: 0; }
+  .style-btn {
+    height: 28px; padding: 0 10px; border: 1.5px solid #e0e4ef;
+    border-radius: 7px; background: #fff; cursor: pointer;
+    font-size: 11px; font-weight: 600; color: #555; transition: all 0.15s;
+    white-space: nowrap; font-family: inherit;
+  }
+  .style-btn:hover { background: #f0f3fc; }
+  .style-btn.active { background: #e8eeff; border-color: #7b8cbc; color: #3a4fa0; }
+  #conn-opts { display: none; align-items: center; gap: 5px; }
+
+  /* ── Multi-select lasso ── */
+  #multisel-bar {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    background: rgba(255,255,255,0.97); border-radius: 10px;
+    padding: 8px 16px; box-shadow: 0 4px 18px rgba(0,0,0,0.13);
+    font-size: 13px; font-weight: 600; color: #3a4fa0;
+    display: none; align-items: center; gap: 10px; z-index: 300;
+    border: 1.5px solid #c8d0f0;
+  }
+  #multisel-bar button {
+    border: none; background: none; cursor: pointer;
+    font-size: 12px; color: #888; padding: 2px 4px;
+  }
+  #multisel-bar button:hover { color: #e04040; }
+
+  /* ── Modals ── */
+  .fcv-modal {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    background: #fff; border-radius: 16px; padding: 26px 30px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.18); z-index: 500;
+    display: none; min-width: 300px;
+  }
+  #group-modal { transform: none; }
+  .fcv-modal h3 { font-size: 16px; font-weight: 700; color: #111827; margin-bottom: 14px; }
+  .fcv-modal input, .fcv-modal select {
+    width: 100%; border: 1.5px solid #d1d5db; border-radius: 8px;
+    padding: 9px 12px; font-size: 14px; margin-bottom: 12px;
+    outline: none; font-family: inherit; box-sizing: border-box; display: block;
+  }
+  .fcv-modal input:focus, .fcv-modal select:focus { border-color: #7b8cbc; }
+  .modal-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+  .modal-btn {
+    padding: 8px 18px; border-radius: 8px; border: 1.5px solid #e0e4ef;
+    cursor: pointer; font-size: 13px; font-weight: 600;
+    transition: all 0.15s; font-family: inherit;
+  }
+  .modal-btn-ok  { background: #3a4fa0; color: #fff; border-color: #3a4fa0; }
+  .modal-btn-ok:hover { background: #2d3d8a; }
+  .modal-btn-cancel { background: #fff; color: #374151; }
+  .modal-btn-cancel:hover { background: #f0f3fc; }
+
+  /* ── Group color swatches ── */
+  #group-color-row {
+    display: flex; align-items: center; gap: 9px; margin-bottom: 14px;
+  }
+  #group-color-row span {
+    font-size: 11px; font-weight: 600; color: #9ca3af;
+    text-transform: uppercase; letter-spacing: 0.08em; flex-shrink: 0;
+  }
+  .grp-swatch {
+    width: 22px; height: 22px; border-radius: 50%; cursor: pointer;
+    border: 2.5px solid transparent; transition: transform 0.12s, border-color 0.12s;
+    flex-shrink: 0;
+  }
+  .grp-swatch:hover { transform: scale(1.15); }
+  .grp-swatch.selected { border-color: rgba(0,0,0,0.40); }
+
+  /* ── Legend add button ── */
+  .legend-add-btn {
+    display: flex; align-items: center; gap: 5px;
+    margin: 5px -7px 0; padding: 4px 7px;
+    border-radius: 7px; cursor: pointer;
+    font-size: 11.5px; color: #b0b7c3; font-weight: 600;
+    transition: background 0.15s, color 0.15s;
+    user-select: none;
+  }
+  .legend-add-btn:hover { background: rgba(0,0,0,0.06); color: #374151; }
+
+  /* ── Legend delete button (appears on hover of user-created rows) ── */
+  .legend-del-btn {
+    margin-left: auto;
+    font-size: 11px; color: transparent;
+    cursor: pointer; padding: 0 2px;
+    border-radius: 4px; flex-shrink: 0;
+    line-height: 1; transition: color 0.15s;
+  }
+  .leg-row:hover .legend-del-btn,
+  .type-row:hover .legend-del-btn,
+  .user-row:hover .legend-del-btn { color: #ccc; }
+  .legend-del-btn:hover { color: #e53935 !important; }
+
+  /* ── Legend reset button ── */
+  .legend-reset-btn {
+    display: flex; align-items: center; gap: 5px;
+    margin: 1px -7px 0; padding: 3px 7px;
+    border-radius: 7px; cursor: pointer;
+    font-size: 11px; color: #c8cdd6; font-weight: 600;
+    transition: background 0.15s, color 0.15s;
+    user-select: none;
+  }
+  .legend-reset-btn:hover { background: rgba(0,0,0,0.05); color: #e53935; }
+
+  /* ── Add-node teammate picker ── */
+  #add-node-assign-row {
+    display: flex; align-items: center; gap: 9px; margin-bottom: 14px; flex-wrap: wrap;
+  }
+  #add-node-assign-row span {
+    font-size: 11px; font-weight: 600; color: #9ca3af;
+    text-transform: uppercase; letter-spacing: 0.08em; flex-shrink: 0;
+  }
+  .assign-dot {
+    width: 22px; height: 22px; border-radius: 50%; cursor: pointer;
+    border: 2.5px solid transparent; transition: transform 0.12s, border-color 0.12s;
+    flex-shrink: 0;
+  }
+  .assign-dot:hover { transform: scale(1.15); }
+  .assign-dot.selected { border-color: rgba(0,0,0,0.45); box-shadow: 0 0 0 2px rgba(0,0,0,0.12); }
+
+  /* ── Dot type selector ── */
+  .dot-type-row { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .dot-type-btn {
+    flex: 1; min-width: 70px; padding: 5px 6px; border-radius: 7px;
+    border: 1.5px solid #e0e4ef; background: #fff;
+    cursor: pointer; font-size: 11px; font-weight: 600;
+    color: #555; transition: all 0.15s; font-family: inherit;
+    text-align: center; white-space: nowrap;
+  }
+  .dot-type-btn:hover { background: #f0f3fc; }
+  .dot-type-btn.active { background: #e8eeff; border-color: #7b8cbc; color: #3a4fa0; }
+
+  /* ── Panel self-assign section ── */
+  #panel-self-assign { margin-top: 18px; padding-top: 16px; border-top: 1px solid #f0f0f0; }
+  #panel-self-assign h4 {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.09em; color: #9ca3af; margin-bottom: 10px;
+  }
+  #self-assign-teammate-row {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center;
+  }
+  .sa-dot {
+    width: 22px; height: 22px; border-radius: 50%; cursor: pointer;
+    border: 2.5px solid transparent; transition: transform 0.12s, border-color 0.12s;
+    flex-shrink: 0;
+  }
+  .sa-dot:hover { transform: scale(1.15); }
+  .sa-dot.selected { border-color: rgba(0,0,0,0.45); box-shadow: 0 0 0 2px rgba(0,0,0,0.12); }
+  #self-assign-confirm-btn {
+    width: 100%; padding: 8px; border-radius: 8px;
+    border: 1.5px solid #3a4fa0; background: #3a4fa0; color: #fff;
+    cursor: pointer; font-size: 13px; font-weight: 600; font-family: inherit;
+    transition: background 0.15s; margin-top: 2px;
+  }
+  #self-assign-confirm-btn:hover { background: #2d3d8a; }
+
+  /* ── Swatch color-picker popup ── */
+  #swatch-picker-popup {
+    position: fixed; display: none; flex-direction: column;
+    align-items: stretch; gap: 8px;
+    background: #fff; border-radius: 12px; padding: 10px 12px 14px;
+    box-shadow: 0 6px 28px rgba(0,0,0,0.18); z-index: 9999; min-width: 130px;
+  }
+  #swatch-picker-popup.open { display: flex; }
+  #swatch-picker-header {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+  #swatch-picker-label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.08em; color: #9ca3af;
+  }
+  #swatch-picker-close {
+    background: #f0f2f7; border: none; border-radius: 50%;
+    width: 22px; height: 22px; font-size: 12px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: #555; transition: background 0.15s; flex-shrink: 0; line-height: 1;
+  }
+  #swatch-picker-close:hover { background: #dce0ef; color: #111; }
+  #color-picker-inp {
+    width: 100%; height: 44px; cursor: pointer;
+    border: 1.5px solid #d1d5db; border-radius: 8px;
+    padding: 2px 3px; font-family: inherit; background: none;
+  }
+
+  /* ── Arrow label input ── */
+  #conn-label-inp {
+    position: fixed; display: none;
+    padding: 5px 10px;
+    border: 2px solid #5b8af5; border-radius: 8px;
+    background: white; color: #374151;
+    font-size: 12px; font-weight: 500;
+    font-family: Segoe UI, system-ui, sans-serif;
+    outline: none; min-width: 190px;
+    box-shadow: 0 3px 14px rgba(0,0,0,0.15);
+    z-index: 9999;
+  }
+
+  /* ── Blob group selection bar ── */
+  #grpsel-bar {
+    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+    background: rgba(255,255,255,0.97);
+    border-radius: 12px; padding: 10px 18px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    backdrop-filter: blur(6px);
+    z-index: 250;
+    display: none; align-items: center; gap: 12px;
+    font-size: 13px; font-weight: 600; color: #374151;
+    white-space: nowrap;
+    border: 1.5px solid #d0d7f0;
+  }
+  #grpsel-bar .grpsel-create {
+    padding: 6px 14px; border-radius: 8px;
+    border: 1.5px solid #3a4fa0; background: #3a4fa0; color: white;
+    cursor: pointer; font-size: 13px; font-weight: 600;
+    font-family: inherit; transition: background 0.15s;
+  }
+  #grpsel-bar .grpsel-create:hover { background: #2d3d8a; }
+  #grpsel-bar .grpsel-clear {
+    padding: 5px 10px; border-radius: 8px;
+    border: 1.5px solid #d1d5db; background: none; color: #777;
+    cursor: pointer; font-size: 13px; font-weight: 600;
+    font-family: inherit; transition: background 0.15s;
+  }
+  #grpsel-bar .grpsel-clear:hover { background: #f0f3fc; }
+
+  /* ── Export dropdown ── */
+  #export-menu {
+    position: fixed; top: 62px; left: 22px;
+    background: rgba(255,255,255,0.98);
+    border-radius: 10px; padding: 6px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.14);
+    backdrop-filter: blur(6px);
+    z-index: 300;
+    display: none; flex-direction: column; gap: 2px;
+    min-width: 148px;
+  }
+  #export-menu.open { display: flex; }
+  .export-opt {
+    padding: 8px 14px; border-radius: 7px;
+    font-size: 13px; font-weight: 600; color: #374151;
+    cursor: pointer; transition: background 0.15s;
+    white-space: nowrap; user-select: none;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .export-opt:hover { background: #f0f3fc; color: #3a4fa0; }
+  #export-loading {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    background: rgba(255,255,255,0.97); border-radius: 14px;
+    padding: 20px 32px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.16);
+    z-index: 9999; font-size: 15px; font-weight: 600;
+    color: #374151; display: none;
+  }
+
+  /* ── Admin edit mode ── */
+  #btn-admin.active { background: #fde8e8; border-color: #e07070; color: #b02020; }
+  #admin-section {
+    display: none; margin-top: 18px; padding-top: 16px;
+    border-top: 2px dashed #f0c0c0;
+  }
+  #admin-section h4 {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.09em; color: #b02020; margin-bottom: 12px;
+  }
+  .admin-field { margin-bottom: 12px; }
+  .admin-field label {
+    display: block; font-size: 11px; font-weight: 600;
+    color: #6b7280; text-transform: uppercase; letter-spacing: 0.08em;
+    margin-bottom: 4px;
+  }
+  .admin-field input[type="text"],
+  .admin-field input[type="number"],
+  .admin-field select,
+  .admin-field textarea {
+    width: 100%; border: 1.5px solid #d1d5db; border-radius: 8px;
+    padding: 7px 10px; font-size: 13px; font-family: inherit;
+    outline: none; box-sizing: border-box; background: #fff;
+    transition: border-color 0.15s;
+  }
+  .admin-field input:focus, .admin-field select:focus, .admin-field textarea:focus {
+    border-color: #e07070;
+  }
+  .admin-field textarea { min-height: 80px; resize: vertical; font-family: monospace; font-size: 12px; }
+  .admin-row-2 { display: flex; gap: 8px; }
+  .admin-row-2 .admin-field { flex: 1; }
+  #admin-apply-btn {
+    width: 100%; padding: 9px; border-radius: 8px;
+    border: 1.5px solid #b02020; background: #b02020; color: #fff;
+    cursor: pointer; font-size: 13px; font-weight: 600; font-family: inherit;
+    transition: background 0.15s; margin-top: 4px;
+  }
+  #admin-apply-btn:hover { background: #8b1010; }
+  #admin-id-field input { background: #f5f5f5 !important; color: #999; cursor: default; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+
+<div id="hint">Click a bubble for details &nbsp;·&nbsp; Scroll to zoom &nbsp;·&nbsp; Drag to pan</div>
+
+<div id="svg-wrap">
+  <svg id="svg" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <filter id="sh" x="-25%" y="-25%" width="150%" height="150%">
+        <feDropShadow dx="0" dy="2" stdDeviation="4" flood-opacity="0.08"/>
+      </filter>
+      <filter id="sh-hub" x="-40%" y="-40%" width="180%" height="180%">
+        <feDropShadow dx="0" dy="5" stdDeviation="10" flood-opacity="0.22"/>
+      </filter>
+      <filter id="sh-goal" x="-30%" y="-30%" width="160%" height="160%">
+        <feDropShadow dx="0" dy="3" stdDeviation="7" flood-color="#FFA000" flood-opacity="0.20"/>
+      </filter>
+      <marker id="arrowhead-solid" markerWidth="16" markerHeight="12"
+              refX="0" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+        <polygon points="0 0, 16 6, 0 12" fill="context-stroke"/>
+      </marker>
+    </defs>
+    <g id="g"></g>
+  </svg>
+</div>
+
+<!-- Detail panel -->
+<div id="panel">
+  <div id="panel-header">
+    <button id="panel-close" onclick="closePanel()">✕</button>
+    <button id="panel-delete" onclick="deleteCurrentNode()" title="Delete this bubble">🗑</button>
+    <div id="panel-type-tag"></div>
+    <div id="panel-title" contenteditable="true" spellcheck="false"></div>
+  </div>
+  <div id="panel-body">
+    <div id="panel-people">
+      <h4>Team Members</h4>
+      <div id="panel-badges"></div>
+    </div>
+    <div id="panel-users" style="margin-bottom:22px">
+      <h4 style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:#9ca3af;margin-bottom:10px">Target Users</h4>
+      <div id="panel-user-badges"></div>
+    </div>
+    <textarea id="panel-desc" placeholder="No description yet — click to add one..."></textarea>
+    <div id="panel-self-assign">
+      <h4>Assign Yourself</h4>
+      <div id="self-assign-teammate-row">
+        <!-- teammate dots injected by buildSelfAssignPicker() -->
+      </div>
+      <div class="dot-type-row" id="self-assign-type-row">
+        <button class="dot-type-btn active" data-type="current" onclick="setSelfAssignType(this)">&#9679; On Project</button>
+        <button class="dot-type-btn"        data-type="want"    onclick="setSelfAssignType(this)">&#9675; Want To Join</button>
+        <button class="dot-type-btn"        data-type="will"    onclick="setSelfAssignType(this)">&#9675; Will Join</button>
+      </div>
+      <button id="self-assign-confirm-btn" onclick="confirmSelfAssign()">Assign to This Project</button>
+    </div>
+
+    <!-- Admin edit section (hidden unless adminMode is on) -->
+    <div id="admin-section">
+      <h4>&#9881; Admin: Node Properties</h4>
+
+      <div class="admin-field">
+        <label>Label lines (one per line)</label>
+        <textarea id="admin-label" spellcheck="false"></textarea>
+      </div>
+
+      <div class="admin-row-2">
+        <div class="admin-field">
+          <label>Width (w)</label>
+          <input type="number" id="admin-w" min="40" max="600" step="2">
+        </div>
+        <div class="admin-field">
+          <label>Height (h)</label>
+          <input type="number" id="admin-h" min="30" max="400" step="2">
+        </div>
+      </div>
+
+      <div class="admin-field">
+        <label>Font size (leave blank for default)</label>
+        <input type="number" id="admin-fontSize" min="8" max="32" step="0.5" placeholder="e.g. 13">
+      </div>
+
+      <div class="admin-field">
+        <label>Type</label>
+        <select id="admin-type">
+          <option value="project">project</option>
+          <option value="sub">sub</option>
+          <option value="research">research</option>
+          <option value="hub">hub</option>
+          <option value="port">port</option>
+          <option value="goal">goal</option>
+          <option value="goals_bg">goals_bg</option>
+        </select>
+      </div>
+
+      <div class="admin-row-2">
+        <div class="admin-field">
+          <label>hasTitle</label>
+          <select id="admin-hasTitle">
+            <option value="">false</option>
+            <option value="true">true</option>
+          </select>
+        </div>
+        <div class="admin-field">
+          <label>bulletAlign</label>
+          <select id="admin-bulletAlign">
+            <option value="">center (default)</option>
+            <option value="left">left</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="admin-field" id="admin-id-field">
+        <label>Node ID (read-only)</label>
+        <input type="text" id="admin-id" readonly>
+      </div>
+
+      <button id="admin-apply-btn" onclick="adminApply()">&#10003; Apply Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Legend panels (rows are built dynamically from TEAMMATES / USER_TYPES data) -->
+<div id="legend-container">
+  <div id="legend">
+    <h4>Team Members</h4>
+    <div id="dot-key">
+      <div class="dot-key-row">
+        <svg width="11" height="11" style="flex-shrink:0;overflow:visible"><circle cx="5.5" cy="5.5" r="3" fill="#6b7280"/></svg>
+        <span>On project</span>
+      </div>
+      <div class="dot-key-row">
+        <svg width="11" height="11" style="flex-shrink:0;overflow:visible"><circle cx="5.5" cy="5.5" r="3" fill="none" stroke="#6b7280" stroke-width="1.4"/></svg>
+        <span>Will join</span>
+      </div>
+      <div class="dot-key-row">
+        <svg width="11" height="11" style="flex-shrink:0;overflow:visible"><circle cx="5.5" cy="5.5" r="3" fill="none" stroke="#6b7280" stroke-width="1.4" stroke-dasharray="1.257,2.513" stroke-linecap="round"/></svg>
+        <span>Wants to join</span>
+      </div>
+    </div>
+  </div>
+  <div id="type-legend">
+    <h4>Node Types</h4>
+    <div class="type-row"><div class="type-swatch" style="background:#D8E6F8;border-color:#90CAF9"></div> Current Project</div>
+    <div class="type-row"><div class="type-swatch" style="background:#E8F5E9;border-color:#A5D6A7"></div> Future Project</div>
+    <div class="type-row"><div class="type-swatch" style="background:#FFF0A3;border-color:#FFE082"></div> Research Agenda</div>
+    <div class="type-row" data-legend-name="FCV Outcome"><div class="type-swatch" style="background:#FFF8E1;border-color:#F9A825"></div> FCV Outcome</div>
+  </div>
+  <div id="users-legend"><h4>Target Users</h4></div>
+  <div id="groups-legend" style="display:none"><h4>Groups</h4></div>
+</div>
+
+<!-- Zoom controls -->
+<div id="zoom-ctrl">
+  <button class="zbtn" onclick="doZoom(1.2)" title="Zoom in">+</button>
+  <button class="zbtn" onclick="doZoom(1/1.2)" title="Zoom out">−</button>
+  <button class="zbtn" onclick="resetView()" title="Reset view" style="font-size:14px">⟳</button>
+</div>
+
+<!-- Toolbar -->
+<div id="toolbar">
+  <button class="tool-btn active" id="btn-select"  title="Select / Pan (S)"     onclick="setMode('select')">&#9654;</button>
+  <button class="tool-btn"        id="btn-lasso"   title="Lasso select (L) — drag to select multiple bubbles" onclick="toggleLasso()">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="2" y="2" width="12" height="12" rx="2.5" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 2" fill="none"/>
+      <path d="M6 8.5L7.5 10L10 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </button>
+  <button class="tool-btn"        id="btn-group"   title="Group bubbles (G)"     onclick="setMode('group')">&#x25A3;</button>
+  <div class="tool-sep"></div>
+  <button class="tool-btn"        id="btn-addnode" title="New bubble"            onclick="showAddNodeModal()">&#xFF0B;</button>
+  <div class="tool-sep"></div>
+  <button class="style-btn" id="btn-cb" onclick="toggleCB()" title="Toggle colorblind-friendly mode">CB</button>
+  <div class="tool-sep" id="conn-sep" style="display:none"></div>
+  <div id="conn-opts">
+    <button class="style-btn active" id="btn-solid"  onclick="setArrowStyle('solid')">&#x2500;&#x2500; &#x2192;</button>
+    <button class="style-btn"        id="btn-dashed" onclick="setArrowStyle('dashed')">&#x22EF;&#x22EF; &#x2192;</button>
+  </div>
+  <div class="tool-sep"></div>
+  <button class="tool-btn" id="btn-export" title="Save / Export map (E)"
+          onclick="toggleExportMenu(event)">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M7 1v8M3 7l4 4 4-4M1 11v2h12v-2" stroke="currentColor" stroke-width="1.8"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </button>
+  <div class="tool-sep"></div>
+  <button class="tool-btn" id="btn-admin" title="Admin edit mode" onclick="toggleAdminMode()">&#9881;</button>
+</div>
+
+<!-- Export format dropdown -->
+<div id="export-menu">
+  <div class="export-opt" onclick="exportMap('png')">&#128444; PNG image</div>
+  <div class="export-opt" onclick="exportMap('jpg')">&#128444; JPG image</div>
+  <div class="export-opt" onclick="exportMap('pdf')">&#128196; PDF</div>
+  <div class="export-opt" onclick="exportMap('html')">&#128196; HTML (interactive)</div>
+</div>
+
+<!-- Export loading indicator -->
+<div id="export-loading">Saving map&#x2026;</div>
+
+<!-- Multi-select status bar -->
+<div id="multisel-bar">
+  <span id="multisel-count">0 bubbles selected</span>
+  <button onclick="clearMultiSel()" title="Clear selection">&#x2715; Clear</button>
+</div>
+
+<!-- Add-node modal -->
+<div id="add-node-modal" class="fcv-modal">
+  <h3>New Bubble</h3>
+  <input id="add-node-inp" type="text" placeholder="Bubble label&#x2026;" />
+  <select id="add-node-type">
+    <option value="project">Current Project</option>
+    <option value="sub">Future Project</option>
+    <option value="research">Research Agenda</option>
+  </select>
+  <div id="add-node-assign-row">
+    <span>Assign to</span>
+    <!-- dots injected by buildAssignPicker() -->
+  </div>
+  <div class="dot-type-row" id="add-node-dot-type-row">
+    <button class="dot-type-btn active" data-type="current" onclick="setAddNodeDotType(this)">&#9679; On Project</button>
+    <button class="dot-type-btn"        data-type="want"    onclick="setAddNodeDotType(this)">&#9675; Want To Join</button>
+    <button class="dot-type-btn"        data-type="will"    onclick="setAddNodeDotType(this)">&#9675; Will Join</button>
+  </div>
+  <div class="modal-btns">
+    <button class="modal-btn modal-btn-cancel" onclick="hideAddNodeModal()">Cancel</button>
+    <button class="modal-btn modal-btn-ok"     onclick="confirmAddNode()">Add</button>
+  </div>
+</div>
+
+<!-- Arrow label input (shown at the arrow midpoint when editing) -->
+<input id="conn-label-inp" type="text" placeholder="Describe this relationship&#x2026;">
+
+<!-- Swatch color-picker popup (legend color reassignment) -->
+<div id="swatch-picker-popup">
+  <div id="swatch-picker-header">
+    <span id="swatch-picker-label">Color</span>
+    <button id="swatch-picker-close" title="Cancel">&#x2715;</button>
+  </div>
+  <input type="color" id="color-picker-inp">
+</div>
+
+<!-- Add legend value modal -->
+<div id="add-legend-modal" class="fcv-modal">
+  <h3 id="add-legend-title">New Entry</h3>
+  <input id="add-legend-name" type="text" placeholder="Name&#x2026;" />
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+    <label style="font-size:13px;font-weight:600;color:#374151;flex-shrink:0;min-width:48px">Color</label>
+    <input id="add-legend-color" type="color" value="#5b8af5"
+      style="width:48px;height:34px;border:1.5px solid #d1d5db;border-radius:8px;padding:2px 3px;cursor:pointer;background:none;font-family:inherit">
+  </div>
+  <div class="modal-btns">
+    <button class="modal-btn modal-btn-cancel" onclick="hideAddLegendModal()">Cancel</button>
+    <button class="modal-btn modal-btn-ok" onclick="confirmAddLegendItem()">Add</button>
+  </div>
+</div>
+
+<!-- Group-label modal -->
+<div id="group-modal" class="fcv-modal">
+  <h3>Name this group</h3>
+  <input id="group-label-inp" type="text" placeholder="Group label&#x2026;" />
+  <div id="group-color-row">
+    <span>Color</span>
+    <div class="grp-swatch selected" style="background:#5060b0" onclick="setGroupColor(0)" title="Blue"></div>
+    <div class="grp-swatch"         style="background:#2a8a50" onclick="setGroupColor(1)" title="Green"></div>
+    <div class="grp-swatch"         style="background:#b06020" onclick="setGroupColor(2)" title="Orange"></div>
+    <div class="grp-swatch"         style="background:#a02020" onclick="setGroupColor(3)" title="Red"></div>
+    <div class="grp-swatch"         style="background:#7030b0" onclick="setGroupColor(4)" title="Purple"></div>
+  </div>
+  <div class="modal-btns">
+    <button class="modal-btn modal-btn-cancel" onclick="cancelGroup()">Cancel</button>
+    <button class="modal-btn modal-btn-ok"     onclick="confirmGroup()">Create</button>
+  </div>
+</div>
+
+<!-- Admin password modal -->
+<div id="admin-pw-modal" class="fcv-modal">
+  <h3>Admin Access</h3>
+  <input id="admin-pw-inp" type="password" placeholder="Password&#x2026;"
+         onkeydown="if(event.key==='Enter') confirmAdminPw()">
+  <div class="modal-btns">
+    <button class="modal-btn modal-btn-cancel" onclick="cancelAdminPw()">Cancel</button>
+    <button class="modal-btn modal-btn-ok"     onclick="confirmAdminPw()">Unlock</button>
+  </div>
+</div>
+
+<!-- Blob group selection bar (appears in group mode when ≥1 bubble is selected) -->
+<div id="grpsel-bar">
+  <span id="grpsel-count">0 selected</span>
+  <button class="grpsel-create" onclick="createBlobGroup()">Group these &#x2192;</button>
+  <button class="grpsel-clear"  onclick="clearGroupSel()">&#x2715; Clear</button>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════
+// DATA  (loaded from data/ JSON files via Python)
+// ════════════════════════════════════════════════════
+
+const TEAMMATES  = __TEAMMATES__;
+const USER_TYPES = __USER_TYPES__;
+
+const NODE_STYLES = {
+  hub:       { fill: "#E4E6EA", stroke: "#C4C7CE", textColor: "#000000", fw: "500", fs: "14"   },
+  project:   { fill: "#D8E6F8", stroke: "#90CAF9", textColor: "#1a237e", fw: "500", fs: "11.5" },
+  research:  { fill: "#FFF0A3", stroke: "#FFE082", textColor: "#7B5800", fw: "500", fs: "11.5" },
+  sub:       { fill: "#E8F5E9", stroke: "#A5D6A7", textColor: "#2E7D32", fw: "500", fs: "11.5" },
+  header:    { fill: "#FFF8E1", stroke: "#FFD54F", textColor: "#BF360C", fw: "700", fs: "12"   },
+  port:      { fill: "#A5D6A7", stroke: "#2E7D32", textColor: "#2E7D32", fw: "500", fs: "11.5" },
+  goal:      { fill: "#FFF8E1", stroke: "#F9A825", textColor: "#BF360C", fw: "700", fs: "12.5" },
+  goals_bg:  { fill: "#FFFBF0", stroke: "#FFD54F", textColor: "#9E7700", fw: "700", fs: "9"    },
+};
+
+// ════════════════════════════════════════════════════
+// COLORBLIND MODE  (toggled via CB button)
+// ════════════════════════════════════════════════════
+
+let cbMode = false;
+
+// Shape assigned to each teammate (by insertion order in TEAMMATES)
+const CB_SHAPES_LIST = ['circle', 'square', 'diamond', 'triangle', 'star', 'cross', 'hexagon', 'pentagon'];
+const CB_DOT_COLOR   = '#222222';
+const teammateShapeMap = {};
+(function assignCBShapes() {
+  let _i = 0;
+  Object.keys(TEAMMATES).forEach(name => {
+    teammateShapeMap[name] = CB_SHAPES_LIST[_i % CB_SHAPES_LIST.length];
+    _i++;
+  });
+})();
+
+// Okabe-Ito colorblind-safe palette for user types
+const CB_USER_PALETTE = ['#E69F00', '#56B4E9', '#009E73', '#0072B2', '#D55E00', '#CC79A7', '#F0E442', '#999999'];
+
+// Colorblind-safe node-type style overrides
+const CB_NODE_STYLE_OVERRIDES = {
+  project:  { fill: '#C8E4F5', stroke: '#0072B2', textColor: '#00416A' },
+  research: { fill: '#FFF3CC', stroke: '#E69F00', textColor: '#7B4F00' },
+  sub:      { fill: '#C4EDD8', stroke: '#009E73', textColor: '#00533E' },
+};
+
+// Storage for originals (populated when CB mode is first activated)
+const _origUserColors         = {};
+const _origNodeStyleOverrides = {};
+
+const NODES = __NODES__;
+const EDGES = __EDGES__;
+
+// Restore any user-edited descriptions saved in a previous session
+(function loadSavedDescs() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('fcv_node_descs') || '{}');
+    NODES.forEach(n => { if (saved[n.id] !== undefined) n.desc = saved[n.id]; });
+  } catch(e) {}
+})();
+
+// ════════════════════════════════════════════════════
+// BUILD LEGENDS DYNAMICALLY
+// ════════════════════════════════════════════════════
+
+(function buildLegends() {
+  // Teammate legend
+  const legendEl = document.getElementById('legend');
+  Object.entries(TEAMMATES).forEach(([name, c]) => {
+    const row = document.createElement('div');
+    row.className = 'leg-row';
+    row.dataset.legendName = name;
+    const dotStyle = c.dot === '#BDBDBD'
+      ? `background:${c.dot};border:1px solid #bbb`
+      : (c.dot === '#E8E8E8' ? `background:${c.dot};border:1px solid #ccc` : `background:${c.dot}`);
+    row.innerHTML = `<div class="leg-dot" style="${dotStyle}"></div> ${name}`;
+    legendEl.appendChild(row);
+  });
+
+  // Users legend
+  const usersEl = document.getElementById('users-legend');
+  Object.entries(USER_TYPES).forEach(([name, ut]) => {
+    const row = document.createElement('div');
+    row.className = 'user-row';
+    row.dataset.legendName = name;
+    row.innerHTML = `<div class="user-ring" style="background:${ut.color}"></div> ${name}`;
+    usersEl.appendChild(row);
+  });
+
+  // "＋ Add" buttons for each legend
+  [
+    { id: 'legend',       category: 'people' },
+    { id: 'type-legend',  category: 'type'   },
+    { id: 'users-legend', category: 'users'  },
+  ].forEach(({ id, category }) => {
+    const panel = document.getElementById(id);
+    const btn = document.createElement('div');
+    btn.className = 'legend-add-btn';
+    btn.textContent = '＋ Add';
+    btn.addEventListener('click', e => { e.stopPropagation(); showAddLegendModal(category); });
+    panel.appendChild(btn);
+    const resetBtn = document.createElement('div');
+    resetBtn.className = 'legend-reset-btn';
+    resetBtn.textContent = '↺ Reset to defaults';
+    resetBtn.addEventListener('click', e => { e.stopPropagation(); resetLegend(category); });
+    panel.appendChild(resetBtn);
+  });
+})();
+
+// ════════════════════════════════════════════════════
+// ADD LEGEND VALUE
+// ════════════════════════════════════════════════════
+
+function _hexToRgb(hex) {
+  return {
+    r: parseInt(hex.slice(1,3), 16),
+    g: parseInt(hex.slice(3,5), 16),
+    b: parseInt(hex.slice(5,7), 16),
+  };
+}
+function _rgbToHex(r, g, b) {
+  return '#' + [r,g,b].map(v =>
+    Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2,'0')
+  ).join('');
+}
+function _mixWhite(hex, keep) {   // keep = 0→white, 1→original color
+  const {r,g,b} = _hexToRgb(hex);
+  return _rgbToHex(r*keep + 255*(1-keep), g*keep + 255*(1-keep), b*keep + 255*(1-keep));
+}
+function _darken(hex, f) {
+  const {r,g,b} = _hexToRgb(hex);
+  return _rgbToHex(r*f, g*f, b*f);
+}
+
+let _addLegendCategory = null;
+
+function showAddLegendModal(category) {
+  const titles = { people: 'New Team Member', type: 'New Node Type', users: 'New User Type' };
+  document.getElementById('add-legend-title').textContent = titles[category] || 'New Entry';
+  document.getElementById('add-legend-name').value = '';
+  _addLegendCategory = category;
+  document.getElementById('add-legend-modal').style.display = 'block';
+  setTimeout(() => document.getElementById('add-legend-name').focus(), 60);
+}
+
+function hideAddLegendModal() {
+  document.getElementById('add-legend-modal').style.display = 'none';
+  _addLegendCategory = null;
+}
+
+function confirmAddLegendItem() {
+  const name = document.getElementById('add-legend-name').value.trim();
+  if (!name) return;
+  const color    = document.getElementById('add-legend-color').value;
+  const category = _addLegendCategory;
+  hideAddLegendModal();
+  if      (category === 'people') _addTeammate(name, color);
+  else if (category === 'type')   _addNodeType(name, color);
+  else if (category === 'users')  _addUserType(name, color);
+}
+
+function _addTeammate(name, color) {
+  if (TEAMMATES[name]) return;
+  TEAMMATES[name] = { dot: color, bg: _mixWhite(color, 0.12), border: _mixWhite(color, 0.45) };
+  const legendEl = document.getElementById('legend');
+  const addBtn   = legendEl.querySelector('.legend-add-btn');
+  const row = document.createElement('div');
+  row.className = 'leg-row';
+  row.dataset.legendName = name;
+  row.dataset.userCreated = '1';
+  row.innerHTML = `<div class="leg-dot" style="background:${color}"></div> ${name}`;
+  const delBtn = document.createElement('span');
+  delBtn.className = 'legend-del-btn';
+  delBtn.title = 'Remove';
+  delBtn.textContent = '✕';
+  delBtn.addEventListener('click', e => { e.stopPropagation(); _deleteTeammate(name, row); });
+  row.appendChild(delBtn);
+  row.addEventListener('click', e => { e.stopPropagation(); toggleFilter('people', name); });
+  legendEl.insertBefore(row, addBtn);
+  const dot = row.querySelector('.leg-dot');
+  if (dot) _wireTeammateSwatch(dot, name, TEAMMATES[name]);
+}
+
+function _addNodeType(name, color) {
+  const key = name.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
+  if (NODE_STYLES[key]) return;
+  const fill      = _mixWhite(color, 0.18);
+  const stroke    = _mixWhite(color, 0.60);
+  const textColor = _darken(color, 0.45);
+  NODE_STYLES[key] = { fill, stroke, textColor, fw: '500', fs: '11.5' };
+  TYPE_LABEL_MAP[name] = key;
+
+  // Add to type legend
+  const typeLegendEl = document.getElementById('type-legend');
+  const addBtn       = typeLegendEl.querySelector('.legend-add-btn');
+  const row = document.createElement('div');
+  row.className = 'type-row';
+  row.dataset.legendName = name;
+  row.dataset.userCreated = '1';
+  row.innerHTML = `<div class="type-swatch" style="background:${fill};border-color:${stroke}"></div> ${name}`;
+  const delBtn = document.createElement('span');
+  delBtn.className = 'legend-del-btn';
+  delBtn.title = 'Remove';
+  delBtn.textContent = '✕';
+  delBtn.addEventListener('click', e => { e.stopPropagation(); _deleteNodeType(key, name, row); });
+  row.appendChild(delBtn);
+  row.addEventListener('click', e => { e.stopPropagation(); toggleFilter('type', key); });
+  typeLegendEl.insertBefore(row, addBtn);
+  const swatch = row.querySelector('.type-swatch');
+  if (swatch) _wireNodeTypeSwatch(swatch, key, NODE_STYLES[key]);
+
+  // Add to add-node modal dropdown
+  const opt = document.createElement('option');
+  opt.value = key; opt.textContent = name;
+  document.getElementById('add-node-type').appendChild(opt);
+}
+
+function _addUserType(name, color) {
+  if (USER_TYPES[name]) return;
+  USER_TYPES[name] = { color };
+  const usersEl = document.getElementById('users-legend');
+  const addBtn  = usersEl.querySelector('.legend-add-btn');
+  const row = document.createElement('div');
+  row.className = 'user-row';
+  row.dataset.legendName = name;
+  row.dataset.userCreated = '1';
+  row.innerHTML = `<div class="user-ring" style="background:${color}"></div> ${name}`;
+  const delBtn = document.createElement('span');
+  delBtn.className = 'legend-del-btn';
+  delBtn.title = 'Remove';
+  delBtn.textContent = '✕';
+  delBtn.addEventListener('click', e => { e.stopPropagation(); _deleteUserType(name, row); });
+  row.appendChild(delBtn);
+  row.addEventListener('click', e => { e.stopPropagation(); toggleFilter('users', name); });
+  usersEl.insertBefore(row, addBtn);
+  const ring = row.querySelector('.user-ring');
+  if (ring) _wireUserTypeSwatch(ring, name, USER_TYPES[name]);
+}
+
+// ════════════════════════════════════════════════════
+// DELETE LEGEND ITEMS & RESET TO DEFAULTS
+// ════════════════════════════════════════════════════
+
+function _deleteTeammate(name, row) {
+  delete TEAMMATES[name];
+  filterState.people.delete(name);
+  row.remove();
+  refreshLegendStyles();
+  applyFilters();
+}
+
+function _deleteNodeType(key, name, row) {
+  delete NODE_STYLES[key];
+  delete TYPE_LABEL_MAP[name];
+  filterState.type.delete(key);
+  row.remove();
+  const opt = document.querySelector(`#add-node-type option[value="${key}"]`);
+  if (opt) opt.remove();
+  refreshLegendStyles();
+  applyFilters();
+}
+
+function _deleteUserType(name, row) {
+  delete USER_TYPES[name];
+  filterState.users.delete(name);
+  row.remove();
+  refreshLegendStyles();
+  applyFilters();
+}
+
+function resetLegend(category) {
+  if (category === 'people') {
+    document.querySelectorAll('#legend .leg-row[data-user-created="1"]').forEach(row => {
+      const name = row.dataset.legendName;
+      if (name) { delete TEAMMATES[name]; filterState.people.delete(name); }
+      row.remove();
+    });
+  } else if (category === 'type') {
+    document.querySelectorAll('#type-legend .type-row[data-user-created="1"]').forEach(row => {
+      const name = row.dataset.legendName;
+      const key  = name ? TYPE_LABEL_MAP[name] : null;
+      if (key) {
+        delete NODE_STYLES[key];
+        delete TYPE_LABEL_MAP[name];
+        filterState.type.delete(key);
+        const opt = document.querySelector(`#add-node-type option[value="${key}"]`);
+        if (opt) opt.remove();
+      }
+      row.remove();
+    });
+  } else if (category === 'users') {
+    document.querySelectorAll('#users-legend .user-row[data-user-created="1"]').forEach(row => {
+      const name = row.dataset.legendName;
+      if (name) { delete USER_TYPES[name]; filterState.users.delete(name); }
+      row.remove();
+    });
+  }
+  refreshLegendStyles();
+  applyFilters();
+}
+
+// ════════════════════════════════════════════════════
+// LEGEND COLOR REASSIGNMENT
+// ════════════════════════════════════════════════════
+
+let _swatchPickerCb        = null;
+let _swatchPickerOrigColor = null;
+
+function _openSwatchPicker(currentColor, callback, anchorEl) {
+  _swatchPickerCb        = callback;
+  _swatchPickerOrigColor = currentColor;
+  const inp   = document.getElementById('color-picker-inp');
+  const popup = document.getElementById('swatch-picker-popup');
+  inp.value = currentColor;
+
+  // Position popup just below the anchor swatch
+  const PW = 142, PH = 104;
+  const r  = anchorEl ? anchorEl.getBoundingClientRect() : { left: 100, bottom: 100, top: 80 };
+  let left = Math.round(r.left);
+  let top  = Math.round(r.bottom + 8);
+  if (left + PW > window.innerWidth  - 10) left = window.innerWidth  - PW - 10;
+  if (top  + PH > window.innerHeight - 10) top  = Math.round(r.top) - PH - 6;
+  popup.style.left = left + 'px';
+  popup.style.top  = top  + 'px';
+  popup.classList.add('open');
+}
+
+function _closeSwatchPicker(revert) {
+  const popup = document.getElementById('swatch-picker-popup');
+  if (!popup.classList.contains('open')) return;
+  popup.classList.remove('open');
+  if (revert && _swatchPickerOrigColor !== null && _swatchPickerCb) {
+    _swatchPickerCb(_swatchPickerOrigColor);  // restore original color
+  }
+  _swatchPickerCb        = null;
+  _swatchPickerOrigColor = null;
+}
+
+document.getElementById('color-picker-inp').addEventListener('input', e => {
+  if (_swatchPickerCb) _swatchPickerCb(e.target.value);
+});
+document.getElementById('swatch-picker-close').addEventListener('click', e => {
+  e.stopPropagation();
+  _closeSwatchPicker(true);   // cancel → revert
+});
+// Close (confirm) on click outside the popup
+document.addEventListener('click', e => {
+  const popup = document.getElementById('swatch-picker-popup');
+  if (popup.classList.contains('open') && !popup.contains(e.target)) {
+    _closeSwatchPicker(false);  // keep new color
+  }
+}, true);
+
+// Attach color-picker to a .leg-dot element for the given teammate name/color object.
+function _wireTeammateSwatch(dot, name, c) {
+  dot.title = 'Click to change color';
+  dot.addEventListener('click', e => {
+    e.stopPropagation();
+    _openSwatchPicker(c.dot, newColor => {
+      c.dot    = newColor;
+      c.bg     = _mixWhite(newColor, 0.12);
+      c.border = _mixWhite(newColor, 0.45);
+      dot.style.background = newColor;
+      dot.style.border     = '';
+      allNodesList().forEach(n => {
+        if (n.people && n.people.some(p => p.name === name)) rebuildNode(n);
+      });
+    }, dot);
+  });
+}
+
+// Attach color-picker to a .user-ring element for the given user-type name/object.
+function _wireUserTypeSwatch(ring, name, ut) {
+  ring.title = 'Click to change color';
+  ring.addEventListener('click', e => {
+    e.stopPropagation();
+    _openSwatchPicker(ut.color, newColor => {
+      ut.color = newColor;
+      ring.style.background = newColor;
+      allNodesList().forEach(n => {
+        if (n.users && n.users.includes(name)) rebuildNode(n);
+      });
+    }, ring);
+  });
+}
+
+// Attach color-picker to a .type-swatch element for the given node-type key/style object.
+function _wireNodeTypeSwatch(swatch, typeKey, s) {
+  swatch.title = 'Click to change fill color';
+  swatch.addEventListener('click', e => {
+    e.stopPropagation();
+    _openSwatchPicker(s.fill, newColor => {
+      s.fill   = newColor;
+      s.stroke = _darken(newColor, 0.78);  // 78% brightness → darker stroke
+      swatch.style.background  = newColor;
+      swatch.style.borderColor = s.stroke;
+      allNodesList().forEach(n => {
+        if (n.type === typeKey) rebuildNode(n);
+      });
+    }, swatch);
+  });
+}
+
+// Wire all pre-built legend swatches (runs after buildLegends and type-legend HTML exists)
+(function wireExistingSwatches() {
+  // Teammate dots
+  document.querySelectorAll('#legend .leg-row').forEach(row => {
+    const dot  = row.querySelector('.leg-dot');
+    if (!dot) return;
+    const name = row.textContent.trim();
+    const c    = TEAMMATES[name];
+    if (!c) return;
+    _wireTeammateSwatch(dot, name, c);
+  });
+
+  // User-type rings
+  document.querySelectorAll('#users-legend .user-row').forEach(row => {
+    const ring = row.querySelector('.user-ring');
+    if (!ring) return;
+    const name = row.textContent.trim();
+    const ut   = USER_TYPES[name];
+    if (!ut) return;
+    _wireUserTypeSwatch(ring, name, ut);
+  });
+
+  // Node-type swatches (static HTML in type-legend)
+  const TYPE_KEY_MAP_LOCAL = { 'Current Project': 'project', 'Future Project': 'sub', 'Research Agenda': 'research', 'FCV Outcome': 'goal' };
+  document.querySelectorAll('#type-legend .type-row').forEach(row => {
+    const swatch  = row.querySelector('.type-swatch');
+    if (!swatch) return;
+    const label   = row.textContent.trim();
+    const typeKey = TYPE_KEY_MAP_LOCAL[label] || TYPE_LABEL_MAP[label];
+    if (!typeKey) return;
+    const s = NODE_STYLES[typeKey];
+    if (!s) return;
+    _wireNodeTypeSwatch(swatch, typeKey, s);
+  });
+})();
+
+// ════════════════════════════════════════════════════
+// RENDER
+// ════════════════════════════════════════════════════
+
+const nMap = {};
+NODES.forEach(n => nMap[n.id] = n);
+
+// Live positions — updated when nodes are dragged
+const pos = {};
+NODES.forEach(n => { pos[n.id] = { x: n.x, y: n.y }; });
+
+const svgNS = "http://www.w3.org/2000/svg";
+const g = document.getElementById('g');
+
+function svgEl(tag, attrs = {}) {
+  const el = document.createElementNS(svgNS, tag);
+  Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+  return el;
+}
+
+// ── Colorblind dot-shape helpers ───────────────────────────────────────────────
+
+// Returns an SVG element for the given CB shape, sized around (cx, cy) with
+// half-extent ~r. status is 'current' | 'will_be' | 'want_to_be'.
+function makeCBDotShape(shape, cx, cy, r, status, extraClass) {
+  let el;
+  if (shape === 'square') {
+    const s = r * 1.5;
+    el = svgEl('rect', { x: cx - s, y: cy - s, width: s * 2, height: s * 2 });
+  } else if (shape === 'diamond') {
+    el = svgEl('polygon', { points: `${cx},${cy - r * 1.4} ${cx + r * 1.2},${cy} ${cx},${cy + r * 1.4} ${cx - r * 1.2},${cy}` });
+  } else if (shape === 'triangle') {
+    el = svgEl('polygon', { points: `${cx},${cy - r * 1.4} ${cx + r * 1.25},${cy + r * 0.85} ${cx - r * 1.25},${cy + r * 0.85}` });
+  } else if (shape === 'star') {
+    const or = r * 1.3, ir = r * 0.55;
+    let pts = '';
+    for (let _si = 0; _si < 8; _si++) {
+      const a = (_si * Math.PI / 4) - Math.PI / 2;
+      const rr = _si % 2 === 0 ? or : ir;
+      pts += `${(cx + rr * Math.cos(a)).toFixed(1)},${(cy + rr * Math.sin(a)).toFixed(1)} `;
+    }
+    el = svgEl('polygon', { points: pts.trim() });
+  } else if (shape === 'cross') {
+    const t = r * 0.5, len = r * 1.3;
+    const pts = [
+      `${cx - t},${cy - len}`, `${cx + t},${cy - len}`, `${cx + t},${cy - t}`,
+      `${cx + len},${cy - t}`, `${cx + len},${cy + t}`, `${cx + t},${cy + t}`,
+      `${cx + t},${cy + len}`, `${cx - t},${cy + len}`, `${cx - t},${cy + t}`,
+      `${cx - len},${cy + t}`, `${cx - len},${cy - t}`, `${cx - t},${cy - t}`,
+    ].join(' ');
+    el = svgEl('polygon', { points: pts });
+  } else if (shape === 'hexagon') {
+    let pts = '';
+    for (let _hi = 0; _hi < 6; _hi++) {
+      const a = _hi * Math.PI / 3;
+      pts += `${(cx + r * 1.2 * Math.cos(a)).toFixed(1)},${(cy + r * 1.2 * Math.sin(a)).toFixed(1)} `;
+    }
+    el = svgEl('polygon', { points: pts.trim() });
+  } else if (shape === 'pentagon') {
+    let pts = '';
+    for (let _pi = 0; _pi < 5; _pi++) {
+      const a = (_pi * 2 * Math.PI / 5) - Math.PI / 2;
+      pts += `${(cx + r * 1.3 * Math.cos(a)).toFixed(1)},${(cy + r * 1.3 * Math.sin(a)).toFixed(1)} `;
+    }
+    el = svgEl('polygon', { points: pts.trim() });
+  } else {
+    // circle (default)
+    el = svgEl('circle', { cx, cy, r });
+  }
+  if (extraClass) el.setAttribute('class', extraClass);
+  const sw = 1.5;
+  if (status === 'want_to_be') {
+    el.setAttribute('fill', 'none');
+    el.setAttribute('stroke', CB_DOT_COLOR);
+    el.setAttribute('stroke-width', String(sw));
+    el.setAttribute('stroke-dasharray', '1.5,2');
+    el.setAttribute('stroke-linecap', 'round');
+  } else if (status === 'will_be') {
+    el.setAttribute('fill', 'none');
+    el.setAttribute('stroke', CB_DOT_COLOR);
+    el.setAttribute('stroke-width', String(sw));
+  } else {
+    el.setAttribute('fill', CB_DOT_COLOR);
+    el.setAttribute('stroke', 'none');
+  }
+  return el;
+}
+
+// Unified dot renderer: uses CB shapes when cbMode is on, colored circles otherwise.
+function renderDot(gr, cx, cy, r, col, status, personName, markerClass) {
+  if (cbMode) {
+    const shape = teammateShapeMap[personName] || 'circle';
+    gr.appendChild(makeCBDotShape(shape, cx, cy, r, status, markerClass || null));
+    return;
+  }
+  if (status === 'want_to_be') {
+    const el = svgEl('circle', { cx, cy, r, fill: 'none', stroke: col, 'stroke-width': '1.5',
+      'stroke-dasharray': dottedDashArray(r), 'stroke-linecap': 'round' });
+    if (markerClass) el.setAttribute('class', markerClass);
+    gr.appendChild(el);
+  } else if (status === 'will_be') {
+    const el = svgEl('circle', { cx, cy, r, fill: 'none', stroke: col, 'stroke-width': '1.5' });
+    if (markerClass) el.setAttribute('class', markerClass);
+    gr.appendChild(el);
+  } else {
+    const el = svgEl('circle', { cx, cy, r, fill: col, stroke: col, 'stroke-width': '1.5' });
+    if (markerClass) el.setAttribute('class', markerClass);
+    gr.appendChild(el);
+  }
+}
+
+// ── Edge path registry for live updates
+const edgePaths   = {};   // "fromId->toId" -> SVGPathElement
+const nodeToEdges = {};   // nodeId -> ["fromId->toId", ...]
+NODES.forEach(n => { nodeToEdges[n.id] = []; });
+
+function edgeD(aId, bId) {
+  const a = pos[aId], b = pos[bId];
+  const dx = b.x - a.x;
+  return `M${a.x},${a.y} C${a.x + dx * 0.5},${a.y} ${a.x + dx * 0.5},${b.y} ${b.x},${b.y}`;
+}
+
+function updateNodeEdges(nodeId) {
+  nodeToEdges[nodeId].forEach(key => {
+    const path = edgePaths[key];
+    if (!path) return;
+    const [aId, bId] = key.split('->');
+    path.setAttribute('d', edgeD(aId, bId));
+  });
+}
+
+// ── Draw edges (behind nodes)
+EDGES.forEach(([aId, bId]) => {
+  const a = nMap[aId], b = nMap[bId];
+  if (!a || !b) return;
+  const isHub = aId === 'hub' || bId === 'hub';
+  const key = `${aId}->${bId}`;
+  const path = svgEl('path', {
+    d: edgeD(aId, bId),
+    class: isHub ? 'edge edge-hub' : 'edge',
+  });
+  g.appendChild(path);
+  edgePaths[key] = path;
+  nodeToEdges[aId].push(key);
+  nodeToEdges[bId].push(key);
+});
+
+// ── Node element registry
+const nodeEls = {};
+
+// ── Node content builders — used for initial draw and resize-rebuild ──────────
+
+// Returns a stroke-dasharray string where N dots divide the circumference of
+// radius r exactly evenly — no seam overlap. Uses round linecaps so each
+// tiny dash renders as a dot.
+function dottedDashArray(r) {
+  const C = 2 * Math.PI * r;
+  const n = Math.max(6, Math.round(C / 3.5)) + 1;
+  const dot = 1;
+  const gap = C / n - dot;
+  return `${dot},${gap.toFixed(2)}`;
+}
+
+// Returns "current" | "will_be" | "want_to_be" for a person entry.
+// Supports both the new `status` field and the legacy `border` boolean.
+function getPersonStatus(p) {
+  if (p.status) return p.status;
+  if (p.dotType === 'want') return 'want_to_be';
+  if (p.dotType === 'will') return 'will_be';
+  return p.border !== false ? 'current' : 'want_to_be';
+}
+
+function buildComplexNodeContent(node, gr) {
+  const s      = NODE_STYLES[node.type] || NODE_STYLES.project;
+  const labels = Array.isArray(node.label) ? node.label : [node.label];
+
+  // Port nodes: small filled circle used as arrow-attachment anchors on list bullets
+  if (node.type === 'port') {
+    gr.appendChild(svgEl('circle', {
+      cx: 0, cy: 0, r: 5,
+      fill: s.fill, stroke: s.stroke, 'stroke-width': '1.5',
+    }));
+    return;
+  }
+
+  // Goals background container — decorative dashed amber rect grouping the four outcome goals
+  if (node.type === 'goals_bg') {
+    gr.appendChild(svgEl('rect', {
+      x: -node.w / 2, y: -node.h / 2,
+      width: node.w, height: node.h,
+      rx: 22, ry: 22,
+      fill: s.fill, stroke: s.stroke, 'stroke-width': '1.5',
+      'stroke-dasharray': '8 4', opacity: '0.9',
+    }));
+    const lbl = svgEl('text', {
+      x: 0, y: -node.h / 2 + 15,
+      'text-anchor': 'middle', 'dominant-baseline': 'middle',
+      fill: s.textColor, 'font-size': s.fs, 'font-weight': s.fw,
+      'letter-spacing': '2.5',
+      'font-family': 'Segoe UI, system-ui, sans-serif',
+    });
+    lbl.textContent = 'FCV OUTCOMES';
+    gr.appendChild(lbl);
+    return;
+  }
+
+  // Goal nodes — amber outcome destinations, visually distinct from project nodes
+  if (node.type === 'goal') {
+    // Outer soft halo ring
+    gr.appendChild(svgEl('rect', {
+      x: -node.w / 2 - 7, y: -node.h / 2 - 7,
+      width: node.w + 14, height: node.h + 14,
+      rx: 19, ry: 19,
+      fill: 'none', stroke: '#FFA000', 'stroke-width': '1.5',
+      opacity: '0.28',
+    }));
+    // Main fill rect with amber shadow
+    gr.appendChild(svgEl('rect', {
+      x: -node.w / 2, y: -node.h / 2,
+      width: node.w, height: node.h,
+      rx: 13, ry: 13,
+      fill: s.fill, stroke: s.stroke, 'stroke-width': '2.5',
+      filter: 'url(#sh-goal)', class: 'node-bg type-fill',
+    }));
+    // Small diamond accent on the left edge
+    const dPath = `M${-node.w / 2 - 8},0 L${-node.w / 2 - 3},-5 L${-node.w / 2 + 2},0 L${-node.w / 2 - 3},5 Z`;
+    gr.appendChild(svgEl('path', { d: dPath, fill: '#F9A825', stroke: 'none' }));
+    // Label
+    const t = svgEl('text', {
+      x: 3, y: 0,
+      'text-anchor': 'middle', 'dominant-baseline': 'middle',
+      fill: s.textColor, 'font-size': s.fs, 'font-weight': s.fw,
+      'letter-spacing': '0.5',
+      'font-family': 'Segoe UI, system-ui, sans-serif',
+      class: 'type-text',
+    });
+    t.textContent = Array.isArray(node.label) ? node.label.join(' ') : node.label;
+    gr.appendChild(t);
+    return;
+  }
+
+  if (node.type === 'hub') {
+    gr.appendChild(svgEl('rect', {
+      x: -node.w / 2 - 6, y: -node.h / 2 - 6,
+      width: node.w + 12, height: node.h + 12,
+      rx: 18, ry: 18,
+      fill: 'none', stroke: '#C4C7CE', 'stroke-width': '2', opacity: '0.45',
+    }));
+    gr.appendChild(svgEl('rect', {
+      x: -node.w / 2, y: -node.h / 2,
+      width: node.w, height: node.h,
+      rx: 13, ry: 13,
+      fill: s.fill, stroke: s.stroke, 'stroke-width': '2.5',
+      filter: 'url(#sh-hub)', class: 'node-bg',
+    }));
+    const t = svgEl('text', {
+      x: 0, y: 0,
+      'text-anchor': 'middle', 'dominant-baseline': 'middle',
+      fill: s.textColor, 'font-size': s.fs, 'font-weight': s.fw,
+      'font-family': 'Segoe UI, system-ui, sans-serif',
+    });
+    t.textContent = node.label;
+    gr.appendChild(t);
+
+  } else {
+    // Curved user-audience bars hugging the left rounded edge of the node.
+    if (node.users && node.users.length > 0) {
+      const barW = 6, gap = 3, edgeGap = 1;
+      const bRx = 13;
+      const n = node.users.length;
+      const cx   = -node.w / 2 + bRx;
+      const cy_t = -node.h / 2 + bRx;
+      const cy_b =  node.h / 2 - bRx;
+      for (let ri = 0; ri < n; ri++) {
+        const ut = USER_TYPES[node.users[n - 1 - ri]];
+        if (!ut) continue;
+        const off  = edgeGap + ri * (barW + gap);
+        const r_in = bRx + off;
+        const r_out= bRx + off + barW;
+        const d = [
+          `M ${-node.w/2-off},${cy_b}`,
+          `L ${-node.w/2-off},${cy_t}`,
+          `A ${r_in},${r_in} 0 0 1 ${cx},${-node.h/2-off}`,
+          `L ${cx},${-node.h/2-off-barW}`,
+          `A ${r_out},${r_out} 0 0 0 ${-node.w/2-off-barW},${cy_t}`,
+          `L ${-node.w/2-off-barW},${cy_b}`,
+          `A ${r_out},${r_out} 0 0 0 ${cx},${node.h/2+off+barW}`,
+          `L ${cx},${node.h/2+off}`,
+          `A ${r_in},${r_in} 0 0 1 ${-node.w/2-off},${cy_b}`,
+          `Z`,
+        ].join(' ');
+        gr.appendChild(svgEl('path', { d, fill: ut.color, stroke: 'none', class: 'user-bar' }));
+      }
+    }
+
+    gr.appendChild(svgEl('rect', {
+      x: -node.w / 2, y: -node.h / 2,
+      width: node.w, height: node.h,
+      rx: 13, ry: 13,
+      fill: s.fill, stroke: 'none',
+      filter: 'url(#sh)', class: 'node-bg type-fill',
+    }));
+
+    const hasDots = node.people.length > 0;
+    const dotH    = hasDots ? 14 : 0;
+    const lineH   = 13.5;
+    const totalTextH = labels.length * lineH;
+    const availTop = -node.h / 2 + 8;
+    const availH   = node.h - 16 - dotH;
+    const textStartY = availTop + (availH - totalTextH) / 2 + lineH * 0.55;
+
+    labels.forEach((line, i) => {
+      const isTitle = node.hasTitle && i === 0;
+      const extraY  = node.hasTitle && i > 0 ? 5 : 0;
+      const leftAlign = node.bulletAlign === 'left' && !isTitle;
+      const t = svgEl('text', {
+        x: leftAlign ? -node.w / 2 + 14 : 0,
+        y: textStartY + i * lineH + extraY,
+        'text-anchor': leftAlign ? 'start' : 'middle', 'dominant-baseline': 'middle',
+        fill: s.textColor,
+        'font-size': isTitle ? String(parseFloat(node.fontSize || s.fs) + 1) : (node.fontSize ? String(node.fontSize) : s.fs),
+        'font-weight': isTitle ? '700' : s.fw,
+        'font-family': 'Segoe UI, system-ui, sans-serif',
+        class: 'type-text',
+      });
+      t.textContent = line;
+      gr.appendChild(t);
+
+      // Per-line dot annotations
+      if (node.lineAnnotations && node.lineAnnotations[String(i)]) {
+        const lineY = textStartY + i * lineH + extraY;
+        const textHalfW = t.getComputedTextLength() / 2;
+        node.lineAnnotations[String(i)].forEach((p, pi) => {
+          const col    = (TEAMMATES[p.name] || {}).dot || '#999';
+          const status = getPersonStatus(p);
+          const dotR   = 3.0;
+          const dotX   = textHalfW + 6 + pi * (dotR * 2 + 3);
+          renderDot(gr, dotX, lineY, dotR, col, status, p.name, null);
+        });
+      }
+    });
+
+    if (hasDots) {
+      const gap = 13;
+      const totalW = (node.people.length - 1) * gap;
+      const startX = -totalW / 2;
+      const dotsY  = node.h / 2 - 16;
+      node.people.forEach((p, i) => {
+        const col    = (TEAMMATES[p.name] || {}).dot || '#999';
+        const status = getPersonStatus(p);
+        const dotR   = 3.5;
+        const dotX   = startX + i * gap;
+        renderDot(gr, dotX, dotsY, dotR, col, status, p.name, 'dot-marker');
+      });
+    }
+  }
+}
+
+function buildUserNodeContent(node, gr) {
+  const s = NODE_STYLES[node.type] || NODE_STYLES.project;
+  gr.appendChild(svgEl('rect', {
+    x: -node.w / 2, y: -node.h / 2,
+    width: node.w, height: node.h,
+    rx: 13, ry: 13,
+    fill: s.fill, stroke: s.stroke, 'stroke-width': '2',
+    filter: 'url(#sh)', class: 'node-bg type-fill',
+  }));
+  const t = document.createElementNS(svgNS, 'text');
+  t.textContent = node.label;
+  t.setAttribute('x', '0'); t.setAttribute('y', '0');
+  t.setAttribute('text-anchor', 'middle');
+  t.setAttribute('dominant-baseline', 'middle');
+  t.setAttribute('fill',        s.textColor);
+  t.setAttribute('font-size',   s.fs);
+  t.setAttribute('font-weight', s.fw);
+  t.setAttribute('font-family', 'Segoe UI, system-ui, sans-serif');
+  t.setAttribute('class', 'type-text');
+  gr.appendChild(t);
+}
+
+// Returns the geometry {x,y,w,h} for a resize handle on the given side of node.
+function resizeHandleGeom(node, side) {
+  const HSIZE = 8, hw = node.w / 2, hh = node.h / 2;
+  if (side === 'L') return { x: -hw - HSIZE / 2, y: -hh,             w: HSIZE,    h: node.h };
+  if (side === 'R') return { x:  hw - HSIZE / 2, y: -hh,             w: HSIZE,    h: node.h };
+  if (side === 'T') return { x: -hw,             y: -hh - HSIZE / 2, w: node.w,   h: HSIZE  };
+                    return { x: -hw,             y:  hh - HSIZE / 2, w: node.w,   h: HSIZE  };
+}
+
+// Appends four invisible resize-handle strips to gr and stores them on node._handleEls.
+function addResizeHandles(node, gr) {
+  const SIDES = [
+    { side: 'L', cur: 'ew-resize' },
+    { side: 'R', cur: 'ew-resize' },
+    { side: 'T', cur: 'ns-resize' },
+    { side: 'B', cur: 'ns-resize' },
+  ];
+  node._handleEls = SIDES.map(({ side, cur }) => {
+    const geom   = resizeHandleGeom(node, side);
+    const handle = svgEl('rect', {
+      x: geom.x, y: geom.y, width: geom.w, height: geom.h,
+      fill: 'transparent', stroke: 'none',
+    });
+    handle.style.cursor = cur;
+    handle.addEventListener('mousedown', e => {
+      e.stopPropagation();
+      resizeDrag = {
+        node, side,
+        startMx: e.clientX, startMy: e.clientY,
+        startW: node.w, startH: node.h,
+        startPx: pos[node.id].x, startPy: pos[node.id].y,
+      };
+    });
+    gr.appendChild(handle);
+    return handle;
+  });
+}
+
+// Clear and rebuild a node group's visual content + resize handles.
+function rebuildNode(node) {
+  const gr = nodeEls[node.id];
+  while (gr.firstChild) gr.removeChild(gr.firstChild);
+  if (node._user && !(node.people && node.people.length > 0)) buildUserNodeContent(node, gr);
+  else buildComplexNodeContent(node, gr);
+  addResizeHandles(node, gr);
+}
+
+// ── Draw nodes
+NODES.forEach(node => {
+  const gr = svgEl('g', {
+    class: 'node',
+    transform: `translate(${node.x},${node.y})`,
+  });
+  nodeEls[node.id] = gr;
+  g.appendChild(gr);  // append early so getComputedTextLength() works
+  buildComplexNodeContent(node, gr);
+  addResizeHandles(node, gr);
+  // goals_bg is a purely decorative container — never intercept pointer events
+  if (node.type === 'goals_bg') gr.style.pointerEvents = 'none';
+});
+
+// Attach per-node mousedown
+NODES.forEach(node => {
+  const gr = nodeEls[node.id];
+  if (!gr) return;
+  gr.style.cursor = 'grab';
+
+  gr.addEventListener('mousedown', e => {
+    if (mode === 'group') {
+      e.stopPropagation();
+      toggleGroupSelNode(node);
+      return;
+    }
+    if (mode !== 'select') return;
+    e.stopPropagation();
+    // Shift+click: toggle this node in/out of multi-selection
+    if (e.shiftKey) {
+      if (multiSelIds.has(node.id)) removeMultiSel(node.id);
+      else addMultiSel(node.id);
+      return;
+    }
+    // If this node is part of a multi-selection, start a multi-drag
+    if (multiSelIds.size > 1 && multiSelIds.has(node.id)) {
+      const startPositions = {};
+      multiSelIds.forEach(id => { startPositions[id] = { x: pos[id].x, y: pos[id].y }; });
+      nodeDrag = {
+        node,
+        startMx: e.clientX, startMy: e.clientY,
+        startNx: pos[node.id].x, startNy: pos[node.id].y,
+        moved: false,
+        isMulti: true, startPositions,
+      };
+    } else {
+      // Normal single-node drag; clear any stale multi-selection
+      clearMultiSel();
+      nodeDrag = {
+        node,
+        startMx: e.clientX,
+        startMy: e.clientY,
+        startNx: pos[node.id].x,
+        startNy: pos[node.id].y,
+        moved: false,
+      };
+    }
+    gr.style.cursor = 'grabbing';
+    g.appendChild(gr);
+  });
+
+  gr.addEventListener('touchstart', e => {
+    if (mode !== 'select') return;
+    if (e.touches.length !== 1) return;
+    e.stopPropagation();
+    nodeDrag = {
+      node,
+      startMx: e.touches[0].clientX,
+      startMy: e.touches[0].clientY,
+      startNx: pos[node.id].x,
+      startNy: pos[node.id].y,
+      moved: false,
+    };
+  }, { passive: true });
+});
+
+// ════════════════════════════════════════════════════
+// PANEL
+// ════════════════════════════════════════════════════
+
+function openPanel(node) {
+  const title = Array.isArray(node.label) ? node.label.join(' ') : node.label;
+  document.getElementById('panel-title').textContent = title;
+
+  const typeLabels = {
+    hub:       '🏛 Central Hub',
+    project:   '📋 Current Project',
+    research:  '🔬 Research Agenda',
+    sub:       '🔧 Future Project',
+    goal:      '🎯 FCV Outcome',
+    goals_bg:  '🎯 FCV Outcomes Group',
+  };
+  document.getElementById('panel-type-tag').textContent = typeLabels[node.type] || '';
+
+  const badges = document.getElementById('panel-badges');
+  badges.innerHTML = '';
+  if (node.people && node.people.length > 0) {
+    node.people.forEach(p => {
+      const c = TEAMMATES[p.name] || { dot: '#999', bg: '#f0f0f0', border: '#ddd' };
+      const b = document.createElement('span');
+      b.className = 'badge';
+      Object.assign(b.style, {
+        background: c.bg, borderColor: c.border, color: c.dot,
+      });
+      const pStatus    = getPersonStatus(p);
+      const statusLabel = pStatus === 'will_be' ? ' · will join' : pStatus === 'want_to_be' ? ' · wants to join' : '';
+      const dotStyle = pStatus === 'want_to_be'
+        ? `background:none;border:1.5px dotted ${c.dot};width:7px;height:7px`
+        : pStatus === 'will_be'
+        ? `background:none;border:1.5px solid ${c.dot};width:7px;height:7px`
+        : `background:${c.dot}`;
+      b.innerHTML = `<span class="badge-dot" style="${dotStyle}"></span>${p.name}<span style="opacity:0.6;font-size:10px">${statusLabel}</span><button class="badge-remove" title="Remove from project">✕</button>`;
+      b.querySelector('.badge-remove').addEventListener('click', (e) => {
+        e.stopPropagation();
+        node.people = node.people.filter(q => !(q.name === p.name && (q.dotType || 'current') === (p.dotType || 'current')));
+        rebuildNode(node);
+        openPanel(node);
+        saveToSupabase();
+      });
+      badges.appendChild(b);
+    });
+    document.getElementById('panel-people').style.display = 'block';
+  } else {
+    document.getElementById('panel-people').style.display = 'none';
+  }
+
+  const userBadges = document.getElementById('panel-user-badges');
+  userBadges.innerHTML = '';
+  if (node.users && node.users.length > 0) {
+    node.users.forEach(uName => {
+      const ut = USER_TYPES[uName] || { color: '#999' };
+      const b = document.createElement('span');
+      b.className = 'badge';
+      Object.assign(b.style, {
+        background: ut.color + '18',
+        borderColor: ut.color + '70',
+        color: ut.color,
+      });
+      b.innerHTML = `<span class="badge-dot" style="background:${ut.color}"></span>${uName}`;
+      userBadges.appendChild(b);
+    });
+    document.getElementById('panel-users').style.display = 'block';
+  } else {
+    document.getElementById('panel-users').style.display = 'none';
+  }
+
+  document.getElementById('panel-desc').value = node.desc || '';
+
+  // Track which node is open for self-assign and reset self-assign UI
+  _selfAssignNode = node;
+  document.querySelectorAll('#self-assign-teammate-row .sa-dot').forEach(d => d.classList.remove('selected'));
+  document.querySelectorAll('#self-assign-type-row .dot-type-btn').forEach((b, i) => b.classList.toggle('active', i === 0));
+  _selfAssignDotType = 'current';
+
+  populateAdminSection(node);
+  document.getElementById('panel').classList.add('open');
+}
+
+function closePanel() {
+  document.getElementById('panel').classList.remove('open');
+  document.getElementById('admin-section').style.display = 'none';
+  _selfAssignNode = null;
+}
+
+// ── Delete the currently open node ───────────────────────────────────────────
+function deleteCurrentNode() {
+  const node = _selfAssignNode;
+  if (!node) return;
+  const label = Array.isArray(node.label) ? node.label.join(' ') : node.label;
+  if (!confirm(`Delete "${label}"?\n\nThis will also remove all connections to this bubble.`)) return;
+
+  const id = node.id;
+
+  // Remove all static edges touching this node
+  (nodeToEdges[id] || []).forEach(key => {
+    const path = edgePaths[key];
+    if (path) path.remove();
+    delete edgePaths[key];
+    // Clean the key out of the other node's edge list
+    const [aId, bId] = key.split('->');
+    const otherId = aId === id ? bId : aId;
+    if (nodeToEdges[otherId]) {
+      nodeToEdges[otherId] = nodeToEdges[otherId].filter(k => k !== key);
+    }
+  });
+  delete nodeToEdges[id];
+
+  // Remove user connections touching this node
+  for (let i = userConnections.length - 1; i >= 0; i--) {
+    const c = userConnections[i];
+    if (c.fromId === id || c.toId === id) {
+      if (c._hitEl)     c._hitEl.remove();
+      if (c._glowEl)    c._glowEl.remove();
+      if (c._labelEl)   c._labelEl.remove();
+      if (c._labelHitEl) c._labelHitEl.remove();
+      if (c._el)        c._el.remove();
+      if (c._barEl)     c._barEl.remove();
+      userConnections.splice(i, 1);
+    }
+  }
+
+  // Remove SVG element
+  const gr = nodeEls[id];
+  if (gr) gr.remove();
+  delete nodeEls[id];
+
+  // Remove from data structures
+  delete nMap[id];
+  delete pos[id];
+
+  // Remove from NODES or userCreatedNodes
+  const ni = NODES.indexOf(node);
+  if (ni !== -1) NODES.splice(ni, 1);
+  const ui = userCreatedNodes.indexOf(node);
+  if (ui !== -1) userCreatedNodes.splice(ui, 1);
+
+  // Clean up localStorage description
+  try {
+    const saved = JSON.parse(localStorage.getItem('fcv_node_descs') || '{}');
+    delete saved[id];
+    localStorage.setItem('fcv_node_descs', JSON.stringify(saved));
+  } catch(e) {}
+
+  closePanel();
+  saveToSupabase();
+}
+
+// Save description edits back to the node and persist in localStorage + Supabase
+document.getElementById('panel-desc').addEventListener('input', function() {
+  if (!_selfAssignNode) return;
+  _selfAssignNode.desc = this.value;
+  try {
+    const saved = JSON.parse(localStorage.getItem('fcv_node_descs') || '{}');
+    saved[_selfAssignNode.id] = this.value;
+    localStorage.setItem('fcv_node_descs', JSON.stringify(saved));
+  } catch(e) {}
+  saveToSupabase();
+});
+
+// Save title edits back to the node label
+document.getElementById('panel-title').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') { e.preventDefault(); this.blur(); }
+});
+document.getElementById('panel-title').addEventListener('input', function() {
+  if (!_selfAssignNode) return;
+  const newLabel = this.textContent.trim() || this.textContent;
+  _selfAssignNode.label = newLabel;
+  rebuildNode(_selfAssignNode);
+  saveToSupabase();
+});
+
+
+document.getElementById('svg-wrap').addEventListener('click', closePanel);
+
+// ════════════════════════════════════════════════════
+// PAN & ZOOM
+// ════════════════════════════════════════════════════
+
+const CLOUD_CX = 1445, CLOUD_CY = 420;
+
+let scale = 0.85, tx = 0, ty = 0;
+
+function applyT() {
+  g.setAttribute('transform', `translate(${tx},${ty}) scale(${scale})`);
+}
+
+function centerView() {
+  tx = window.innerWidth  / 2 - CLOUD_CX * scale;
+  ty = window.innerHeight / 2 - CLOUD_CY * scale;
+}
+
+centerView();
+applyT();
+
+function doZoom(f) {
+  scale = Math.min(3, Math.max(0.2, scale * f));
+  applyT();
+}
+function resetView() { scale = 0.85; centerView(); applyT(); }
+
+window.addEventListener('resize', () => { centerView(); applyT(); });
+
+const svg = document.getElementById('svg');
+svg.addEventListener('wheel', e => {
+  e.preventDefault();
+  const f = e.deltaY < 0 ? 1.06 : 0.95;
+  const px = e.clientX, py = e.clientY;
+  const newScale = Math.min(3, Math.max(0.2, scale * f));
+  const af = newScale / scale;
+  tx = px - af * (px - tx);
+  ty = py - af * (py - ty);
+  scale = newScale;
+  applyT();
+}, { passive: false });
+
+// ════════════════════════════════════════════════════
+// NODE DRAG  (moves individual bubbles + live edges)
+// ════════════════════════════════════════════════════
+
+let nodeDrag = null;
+let canvasDrag = null;
+let resizeDrag = null;
+let groupResizeDrag = null;
+
+// ── Multi-select lasso state
+let   lassoActive   = false;        // lasso tool toggled on
+let   selBoxDrag    = null;         // active selection-rect drag
+const multiSelIds    = new Set();   // IDs of currently multi-selected nodes
+const multiSelRingEls = {};         // nodeId → blue highlight ring element
+
+window.addEventListener('mousemove', e => {
+  if (resizeDrag) {
+    const { node, side, startMx, startMy, startW, startH, startPx, startPy } = resizeDrag;
+    const dx = (e.clientX - startMx) / scale;
+    const dy = (e.clientY - startMy) / scale;
+    const MIN_W = 80, MIN_H = 38;
+    let newW = startW, newH = startH, newX = startPx, newY = startPy;
+    if      (side === 'L') { newW = Math.max(MIN_W, startW - dx); newX = startPx + (startW - newW) / 2; }
+    else if (side === 'R') { newW = Math.max(MIN_W, startW + dx); newX = startPx + (newW - startW) / 2; }
+    else if (side === 'T') { newH = Math.max(MIN_H, startH - dy); newY = startPy + (startH - newH) / 2; }
+    else if (side === 'B') { newH = Math.max(MIN_H, startH + dy); newY = startPy + (newH - startH) / 2; }
+    node.w = newW; node.h = newH;
+    pos[node.id] = { x: newX, y: newY };
+    rebuildNode(node);
+    nodeEls[node.id].setAttribute('transform', `translate(${newX},${newY})`);
+    updateNodeEdges(node.id);
+    refreshAllUserConns();
+    return;
+  }
+  if (groupResizeDrag) {
+    const { grp, side, startMx, startMy, startX, startY, startW, startH } = groupResizeDrag;
+    const dx = (e.clientX - startMx) / scale;
+    const dy = (e.clientY - startMy) / scale;
+    const MIN_W = 80, MIN_H = 40;
+    if      (side === 'L') { const nw = Math.max(MIN_W, startW - dx); grp.x = startX + (startW - nw); grp.w = nw; }
+    else if (side === 'R') { grp.w = Math.max(MIN_W, startW + dx); }
+    else if (side === 'T') { const nh = Math.max(MIN_H, startH - dy); grp.y = startY + (startH - nh); grp.h = nh; }
+    else if (side === 'B') { grp.h = Math.max(MIN_H, startH + dy); }
+    grp._rect.setAttribute('x',      grp.x);
+    grp._rect.setAttribute('y',      grp.y);
+    grp._rect.setAttribute('width',  grp.w);
+    grp._rect.setAttribute('height', grp.h);
+    grp._txt.setAttribute('x', String(grp.x + grp.w / 2));
+    grp._txt.setAttribute('y', String(grp.y - 8));
+    updateGroupResizeHandles(grp);
+    return;
+  }
+  if (nodeDrag) {
+    const dx = (e.clientX - nodeDrag.startMx) / scale;
+    const dy = (e.clientY - nodeDrag.startMy) / scale;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) nodeDrag.moved = true;
+    if (nodeDrag.isMulti) {
+      // Move all selected nodes together
+      multiSelIds.forEach(id => {
+        const sp = nodeDrag.startPositions[id];
+        if (!sp) return;
+        const nx = sp.x + dx, ny = sp.y + dy;
+        pos[id] = { x: nx, y: ny };
+        if (nodeEls[id]) nodeEls[id].setAttribute('transform', `translate(${nx},${ny})`);
+        updateNodeEdges(id);
+        refreshUserConnsForNode(id);
+        if (groupSelRingEls[id]) updateGroupSelRingPos(id);
+        updateMultiSelRingPos(id);
+      });
+    } else {
+      const nx = nodeDrag.startNx + dx;
+      const ny = nodeDrag.startNy + dy;
+      pos[nodeDrag.node.id] = { x: nx, y: ny };
+      nodeEls[nodeDrag.node.id].setAttribute('transform', `translate(${nx},${ny})`);
+      updateNodeEdges(nodeDrag.node.id);
+      refreshUserConnsForNode(nodeDrag.node.id);
+      if (groupSelRingEls[nodeDrag.node.id]) updateGroupSelRingPos(nodeDrag.node.id);
+    }
+    refreshAllBlobGroups();
+    return;
+  }
+  if (selBoxDrag) {
+    const pt = svgPoint(e);
+    const x1 = Math.min(selBoxDrag.startCx, pt.x);
+    const y1 = Math.min(selBoxDrag.startCy, pt.y);
+    const x2 = Math.max(selBoxDrag.startCx, pt.x);
+    const y2 = Math.max(selBoxDrag.startCy, pt.y);
+    selBoxEl.setAttribute('x',      String(x1));
+    selBoxEl.setAttribute('y',      String(y1));
+    selBoxEl.setAttribute('width',  String(x2 - x1));
+    selBoxEl.setAttribute('height', String(y2 - y1));
+    selBoxDrag.moved = true;
+    return;
+  }
+  if (canvasDrag) {
+    tx = canvasDrag.startTx + (e.clientX - canvasDrag.startMx);
+    ty = canvasDrag.startTy + (e.clientY - canvasDrag.startMy);
+    applyT();
+  }
+});
+
+window.addEventListener('mouseup', e => {
+  if (resizeDrag)      { resizeDrag = null;      return; }
+  if (groupResizeDrag) { groupResizeDrag = null; return; }
+  if (nodeDrag) {
+    const nd = nodeDrag;
+    nodeDrag = null;
+    nodeEls[nd.node.id].style.cursor = 'grab';
+    if (!nd.moved) {
+      if (!nd.isMulti) openPanel(nd.node);
+    } else {
+      saveToSupabase();
+    }
+    return;
+  }
+  if (selBoxDrag) {
+    const sbd = selBoxDrag;
+    selBoxDrag = null;
+    selBoxEl.style.display = 'none';
+    if (sbd.moved) {
+      const x1 = parseFloat(selBoxEl.getAttribute('x'));
+      const y1 = parseFloat(selBoxEl.getAttribute('y'));
+      const x2 = x1 + parseFloat(selBoxEl.getAttribute('width'));
+      const y2 = y1 + parseFloat(selBoxEl.getAttribute('height'));
+      clearMultiSel();
+      allNodesList().forEach(node => {
+        const p = pos[node.id];
+        if (!p) return;
+        // Select node if its center falls inside the selection rectangle
+        if (p.x >= x1 && p.x <= x2 && p.y >= y1 && p.y <= y2) {
+          addMultiSel(node.id);
+        }
+      });
+    }
+    return;
+  }
+  if (canvasDrag) {
+    const cd = canvasDrag;
+    canvasDrag = null;
+    // Bare click on empty canvas (no drag) — clear multi-selection
+    const dx = e.clientX - cd.startMx, dy = e.clientY - cd.startMy;
+    if (Math.abs(dx) < 4 && Math.abs(dy) < 4) clearMultiSel();
+    return;
+  }
+});
+
+svg.addEventListener('mousedown', e => {
+  if (mode === 'group') return;           // group mode has its own svg-wrap handler
+  if (mode === 'connect' && drawingConn) return; // actively drawing an arrow — don't pan
+  // Lasso mode: drag on empty canvas draws a selection rectangle
+  if (lassoActive && mode === 'select') {
+    const pt = svgPoint(e);
+    selBoxDrag = { startCx: pt.x, startCy: pt.y, moved: false };
+    selBoxEl.setAttribute('x',      String(pt.x));
+    selBoxEl.setAttribute('y',      String(pt.y));
+    selBoxEl.setAttribute('width',  '0');
+    selBoxEl.setAttribute('height', '0');
+    selBoxEl.style.display = '';
+    return;
+  }
+  canvasDrag = {
+    startMx: e.clientX, startMy: e.clientY,
+    startTx: tx,        startTy: ty,
+  };
+});
+
+// Touch — node drag + pinch-to-zoom
+let lastPinchDist = null;
+
+window.addEventListener('touchmove', e => {
+  if (nodeDrag && e.touches.length === 1) {
+    e.preventDefault();
+    const dx = (e.touches[0].clientX - nodeDrag.startMx) / scale;
+    const dy = (e.touches[0].clientY - nodeDrag.startMy) / scale;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) nodeDrag.moved = true;
+    const nx = nodeDrag.startNx + dx;
+    const ny = nodeDrag.startNy + dy;
+    pos[nodeDrag.node.id] = { x: nx, y: ny };
+    nodeEls[nodeDrag.node.id].setAttribute('transform', `translate(${nx},${ny})`);
+    updateNodeEdges(nodeDrag.node.id);
+    refreshAllUserConns();
+    return;
+  }
+  if (canvasDrag && e.touches.length === 1) {
+    e.preventDefault();
+    tx = canvasDrag.startTx + (e.touches[0].clientX - canvasDrag.startMx);
+    ty = canvasDrag.startTy + (e.touches[0].clientY - canvasDrag.startMy);
+    applyT();
+  }
+  if (e.touches.length === 2) {
+    e.preventDefault();
+    const d = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    if (lastPinchDist) {
+      const f = d / lastPinchDist;
+      // Zoom around the midpoint between the two fingers
+      const px = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const py = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      const newScale = Math.min(3, Math.max(0.2, scale * f));
+      const af = newScale / scale;
+      // Keep the canvas point under (px,py) fixed on screen as scale changes
+      tx = px - af * (px - tx);
+      ty = py - af * (py - ty);
+      scale = newScale;
+      applyT();
+    }
+    lastPinchDist = d;
+  }
+}, { passive: false });
+
+svg.addEventListener('touchstart', e => {
+  if (e.touches.length === 1 && !nodeDrag) {
+    canvasDrag = {
+      startMx: e.touches[0].clientX, startMy: e.touches[0].clientY,
+      startTx: tx,                    startTy: ty,
+    };
+  }
+  if (e.touches.length === 2) {
+    lastPinchDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+  }
+}, { passive: true });
+
+window.addEventListener('touchend', () => {
+  if (nodeDrag) {
+    const nd = nodeDrag;
+    nodeDrag = null;
+    if (!nd.moved) openPanel(nd.node);
+  }
+  canvasDrag = null;
+  lastPinchDist = null;
+});
+
+// ════════════════════════════════════════════════════
+// LEGEND FILTERING
+// ════════════════════════════════════════════════════
+
+const filterState = {
+  people: new Set(),
+  type:   new Set(),
+  users:  new Set(),
+};
+
+const TYPE_LABEL_MAP = {
+  "Current Project": "project",
+  "Future Project":  "sub",
+  "Research Agenda": "research",
+  "FCV Outcome":     "goal",
+};
+
+function applyFilters() {
+  const anyActive =
+    filterState.people.size > 0 ||
+    filterState.type.size   > 0 ||
+    filterState.users.size  > 0;
+
+  NODES.forEach(node => {
+    const el = nodeEls[node.id];
+    if (!el) return;
+
+    if (node.type === 'hub' || node.type === 'goal' || node.type === 'goals_bg' || !anyActive) {
+      el.style.opacity       = '1';
+      el.style.pointerEvents = 'all';
+      return;
+    }
+
+    let passPeople = true;
+    if (filterState.people.size > 0) {
+      const nodeNames = (node.people || []).map(p => p.name);
+      passPeople = nodeNames.some(name => filterState.people.has(name));
+    }
+
+    let passType = true;
+    if (filterState.type.size > 0) {
+      passType = filterState.type.has(node.type);
+    }
+
+    let passUsers = true;
+    if (filterState.users.size > 0) {
+      const nodeUsers = node.users || [];
+      passUsers = nodeUsers.some(u => filterState.users.has(u));
+    }
+
+    const visible = passPeople && passType && passUsers;
+    el.style.opacity       = visible ? '1' : '0.1';
+    el.style.pointerEvents = visible ? 'all' : 'none';
+  });
+
+  Object.entries(edgePaths).forEach(([key, path]) => {
+    const [aId, bId] = key.split('->');
+    const aVisible = !nodeEls[aId] || nodeEls[aId].style.opacity !== '0.1';
+    const bVisible = !nodeEls[bId] || nodeEls[bId].style.opacity !== '0.1';
+    path.style.opacity = (aVisible && bVisible) ? '' : '0.03';
+  });
+}
+
+function updateLegendRowStyles(rowEls, activeSet, getValue) {
+  const anyActive = activeSet.size > 0;
+  rowEls.forEach(row => {
+    const val = getValue(row);
+    if (activeSet.has(val)) {
+      row.classList.add('filter-active');
+      row.classList.remove('filter-inactive');
+    } else if (anyActive) {
+      row.classList.remove('filter-active');
+      row.classList.add('filter-inactive');
+    } else {
+      row.classList.remove('filter-active', 'filter-inactive');
+    }
+  });
+}
+
+function refreshLegendStyles() {
+  updateLegendRowStyles(
+    document.querySelectorAll('#legend .leg-row'),
+    filterState.people,
+    row => row.dataset.legendName || row.textContent.trim()
+  );
+  updateLegendRowStyles(
+    document.querySelectorAll('#type-legend .type-row'),
+    filterState.type,
+    row => { const l = row.dataset.legendName || row.textContent.trim(); return TYPE_LABEL_MAP[l] || l; }
+  );
+  updateLegendRowStyles(
+    document.querySelectorAll('#users-legend .user-row'),
+    filterState.users,
+    row => row.dataset.legendName || row.textContent.trim()
+  );
+}
+
+function toggleFilter(category, value) {
+  const s = filterState[category];
+  if (s.has(value)) { s.delete(value); } else { s.add(value); }
+  refreshLegendStyles();
+  applyFilters();
+}
+
+document.querySelectorAll('#legend .leg-row').forEach(row => {
+  row.addEventListener('click', e => {
+    e.stopPropagation();
+    toggleFilter('people', row.dataset.legendName || row.textContent.trim());
+  });
+});
+
+document.querySelectorAll('#type-legend .type-row').forEach(row => {
+  row.addEventListener('click', e => {
+    e.stopPropagation();
+    const label = row.dataset.legendName || row.textContent.trim();
+    toggleFilter('type', TYPE_LABEL_MAP[label] || label);
+  });
+});
+
+document.querySelectorAll('#users-legend .user-row').forEach(row => {
+  row.addEventListener('click', e => {
+    e.stopPropagation();
+    toggleFilter('users', row.dataset.legendName || row.textContent.trim());
+  });
+});
+
+// ════════════════════════════════════════════════════
+// LAYER VISIBILITY TOGGLES  (click legend panel title)
+// ════════════════════════════════════════════════════
+
+const svgWrap = document.getElementById('svg-wrap');
+
+const LAYER_CONFIG = [
+  { legendId: 'legend',       toggleClass: 'hide-dots',        label: 'Team Members' },
+  { legendId: 'type-legend',  toggleClass: 'hide-type-colors', label: 'Node Types'   },
+  { legendId: 'users-legend', toggleClass: 'hide-user-bars',   label: 'Target Users' },
+];
+
+LAYER_CONFIG.forEach(({ legendId, toggleClass }) => {
+  const panel = document.getElementById(legendId);
+  const h4    = panel.querySelector('h4');
+  if (!h4) return;
+
+  let visible = true;
+
+  h4.addEventListener('click', e => {
+    e.stopPropagation();
+    visible = !visible;
+    if (visible) {
+      svgWrap.classList.remove(toggleClass);
+      panel.classList.remove('layer-hidden');
+    } else {
+      svgWrap.classList.add(toggleClass);
+      panel.classList.add('layer-hidden');
+    }
+  });
+});
+
+// ════════════════════════════════════════════════════
+// MODE MANAGEMENT
+// ════════════════════════════════════════════════════
+
+let mode       = 'select';
+let arrowStyle = 'solid';
+
+function setMode(m) {
+  mode = m;
+  ['select','connect','group'].forEach(id => {
+    const b = document.getElementById('btn-' + id);
+    if (b) b.classList.toggle('active', id === m);
+  });
+  // Show/hide arrow style picker and its separator
+  const co  = document.getElementById('conn-opts');
+  const sep = document.getElementById('conn-sep');
+  if (co)  co.style.display  = m === 'connect' ? 'flex' : 'none';
+  if (sep) sep.style.display = m === 'connect' ? 'block' : 'none';
+  cancelConn();
+  cancelGroupDraw();
+  hidePlus();
+  // Clear multi-selection when leaving select mode
+  if (m !== 'select') clearMultiSel();
+  document.getElementById('svg-wrap').style.cursor = m === 'select' ? (lassoActive ? 'crosshair' : 'grab') : 'crosshair';
+}
+
+function setArrowStyle(s) {
+  arrowStyle = s;
+  const bs = document.getElementById('btn-solid');
+  const bd = document.getElementById('btn-dashed');
+  if (bs) bs.classList.toggle('active', s === 'solid');
+  if (bd) bd.classList.toggle('active', s === 'dashed');
+}
+
+// ════════════════════════════════════════════════════
+// DRAWING LAYERS & OVERLAY ELEMENTS
+// ════════════════════════════════════════════════════
+
+const groupsLayerEl  = svgEl('g', {id: 'groups-layer'});
+const connLayerEl    = svgEl('g', {id: 'conn-layer'});
+// Insert visual layers behind existing nodes
+g.insertBefore(connLayerEl,   g.firstChild);
+g.insertBefore(groupsLayerEl, g.firstChild);
+
+// Separate hit layer for arrow clicks — appended AFTER nodes so it sits on top
+// of them in z-order and can receive pointer events, while the visual paths
+// remain in connLayerEl (below nodes) so arrows render behind bubbles.
+const connHitLayerEl = svgEl('g', {id: 'conn-hit-layer'});
+g.appendChild(connHitLayerEl);
+
+// Lasso selection rectangle (drawn on top of everything while dragging)
+const selBoxEl = svgEl('rect', {
+  fill: 'rgba(82,100,220,0.06)', stroke: '#5264c8',
+  'stroke-width': '1.5', 'stroke-dasharray': '5 3',
+  rx: '3', ry: '3', x: '0', y: '0', width: '0', height: '0',
+});
+selBoxEl.style.display = 'none';
+selBoxEl.style.pointerEvents = 'none';
+g.appendChild(selBoxEl);
+
+// Plus indicator — rendered on top of nodes
+const plusEl = svgEl('g', {id: 'plus-el'});
+plusEl.style.display = 'none';
+plusEl.style.cursor  = 'pointer';
+plusEl.appendChild(svgEl('circle', {
+  r: '9', fill: '#e2e9f8', stroke: '#999',
+  'stroke-width': '1.5', opacity: '0.97',
+}));
+['M -4 0 H 4', 'M 0 -4 V 4'].forEach(d => {
+  const line = svgEl('path', {
+    d, stroke: '#999', 'stroke-width': '1.4',
+    'stroke-linecap': 'round', fill: 'none',
+  });
+  line.style.pointerEvents = 'none';
+  plusEl.appendChild(line);
+});
+g.appendChild(plusEl);
+
+// Preview line while drawing a connection
+const connPreview = svgEl('path', {
+  fill: 'none', stroke: '#3a4fa0',
+  'stroke-width': '2.5', 'stroke-dasharray': '8 4',
+});
+connPreview.style.display       = 'none';
+connPreview.style.pointerEvents = 'none';
+g.appendChild(connPreview);
+
+// ════════════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════════════
+
+function svgPoint(e) {
+  const svgElm = document.getElementById('svg');
+  const pt = svgElm.createSVGPoint();
+  pt.x = (e.clientX !== undefined) ? e.clientX : e.touches[0].clientX;
+  pt.y = (e.clientY !== undefined) ? e.clientY : e.touches[0].clientY;
+  return pt.matrixTransform(g.getScreenCTM().inverse());
+}
+
+const userCreatedNodes = [];
+
+function allNodesList() {
+  return [...NODES, ...userCreatedNodes];
+}
+
+function hitTest(pt) {
+  const all = allNodesList();
+  for (let i = all.length - 1; i >= 0; i--) {
+    const n = all[i], p = pos[n.id];
+    if (n.type === 'goals_bg') continue;
+    if (Math.abs(pt.x - p.x) <= n.w / 2 && Math.abs(pt.y - p.y) <= n.h / 2) return n;
+  }
+  return null;
+}
+
+// Distance from pt to the nearest point on the node's border
+function distToBorder(node, pt) {
+  const p  = pos[node.id];
+  const dx = Math.abs(pt.x - p.x);
+  const dy = Math.abs(pt.y - p.y);
+  const hw = node.w / 2, hh = node.h / 2;
+  if (dx <= hw && dy <= hh) return Math.min(hw - dx, hh - dy);   // inside
+  return Math.hypot(Math.max(0, dx - hw), Math.max(0, dy - hh)); // outside
+}
+
+function getAnchorPos(node, dir) {
+  const p = pos[node.id], hw = node.w / 2, hh = node.h / 2;
+  if (dir === 'N') return { x: p.x,      y: p.y - hh, dir: 'N' };
+  if (dir === 'S') return { x: p.x,      y: p.y + hh, dir: 'S' };
+  if (dir === 'E') return { x: p.x + hw, y: p.y,      dir: 'E' };
+                   return { x: p.x - hw, y: p.y,      dir: 'W' };
+}
+
+function nearestAnchorToPoint(node, refPt) {
+  let best = null, bestD = Infinity;
+  ['N','S','E','W'].forEach(dir => {
+    const a = getAnchorPos(node, dir);
+    const d = Math.hypot(a.x - refPt.x, a.y - refPt.y);
+    if (d < bestD) { bestD = d; best = a; }
+  });
+  return best;
+}
+
+// Smooth cubic bezier between two anchored points.
+// The bezier stops at the arrowhead BACK (marker has refX=0), so the curve is
+// already perpendicular to the destination side before the arrowhead begins.
+// The marker then extends the tip forward to the anchor point.
+// Used only for the live drag preview (no obstacle info available yet).
+function connCurve(ax, ay, aDir, bx, by, bDir) {
+  const dist = Math.hypot(bx - ax, by - ay);
+  const cp   = Math.min(160, dist * 0.5);
+  const ctrl = d => d==='N'?[0,-cp] : d==='S'?[0,cp] : d==='E'?[cp,0] : [-cp,0];
+  const [c1x, c1y] = ctrl(aDir);
+
+  const back = bDir ? { N:[0,0], S:[0,0], E:[0,0], W:[0,0] }[bDir] : [0,0];
+  const ex = bx + back[0], ey = by + back[1];
+  const [c2x, c2y] = bDir ? ctrl(bDir) : [0, 0];
+
+  return `M${ax},${ay} C${ax+c1x},${ay+c1y} ${ex+c2x},${ey+c2y} ${ex},${ey}`;
+}
+
+// Obstacle-aware version of connCurve.
+// Samples the naive bezier, detects which other nodes it crosses, then deflects
+// the control points perpendicular to the path direction to route around them.
+// Falls back gracefully (doubled deflection) when a single pass isn't enough.
+// fromId / toId are excluded from obstacle checks.
+function routedConnCurve(ax, ay, aDir, bx, by, bDir, fromId, toId) {
+  const PAD      = 22;   // clearance padding around each node bounding box
+
+  const ex = bx, ey = by;
+
+  // Initial control points
+  const dist  = Math.hypot(ex - ax, ey - ay);
+  const cpLen = Math.min(160, dist * 0.5);
+  const dv    = d => d==='N'?[0,-1]: d==='S'?[0,1]: d==='E'?[1,0]: [-1,0];
+  const [dax, day] = dv(aDir);
+  const [dex, dey] = bDir ? dv(bDir) : [0, 0];
+  const c1x = ax + dax*cpLen, c1y = ay + day*cpLen;
+  const c2x = ex + dex*cpLen, c2y = ey + dey*cpLen;
+
+  // Obstacle nodes — everyone except the two endpoints
+  const obs = allNodesList().filter(n => n.id !== fromId && n.id !== toId);
+  if (obs.length === 0) {
+    return `M${ax},${ay} C${c1x},${c1y} ${c2x},${c2y} ${ex},${ey}`;
+  }
+
+  // Return the subset of obs whose padded bounding box the bezier passes through.
+  function getBlockers(p0, p1, p2, p3) {
+    const N = 28;
+    return obs.filter(n => {
+      const p  = pos[n.id];
+      const hw = n.w / 2 + PAD, hh = n.h / 2 + PAD;
+      for (let i = 0; i <= N; i++) {
+        const t = i / N, mt = 1 - t;
+        const x = mt**3*p0[0] + 3*mt**2*t*p1[0] + 3*mt*t**2*p2[0] + t**3*p3[0];
+        const y = mt**3*p0[1] + 3*mt**2*t*p1[1] + 3*mt*t**2*p2[1] + t**3*p3[1];
+        if (Math.abs(x - p.x) < hw && Math.abs(y - p.y) < hh) return true;
+      }
+      return false;
+    });
+  }
+
+  const blockers = getBlockers([ax,ay],[c1x,c1y],[c2x,c2y],[ex,ey]);
+  if (blockers.length === 0) {
+    return `M${ax},${ay} C${c1x},${c1y} ${c2x},${c2y} ${ex},${ey}`;
+  }
+
+  // Path axis unit vector and its left-perpendicular
+  const pathLen = Math.max(1, Math.hypot(ex - ax, ey - ay));
+  const ux = (ex - ax) / pathLen, uy = (ey - ay) / pathLen; // along path
+  const px = -uy, py = ux;                                   // left perp
+
+  // Compute the minimum deflection required to clear all blockers on a given side.
+  // side = +1 → left of path, -1 → right of path.
+  function sideDeflect(side) {
+    let maxD = 0;
+    for (const n of blockers) {
+      const p = pos[n.id];
+      const t = ((p.x - ax)*ux + (p.y - ay)*uy) / pathLen;
+      if (t < -0.05 || t > 1.05) continue; // node is outside the path extent
+      const perpDist = (p.x - ax)*px + (p.y - ay)*py; // signed dist from path line
+      const halfExt  = Math.sqrt((n.w/2)**2 + (n.h/2)**2) * 0.7 + PAD + 8;
+      const needed   = perpDist * side + halfExt;
+      if (needed > maxD) maxD = needed;
+    }
+    return maxD;
+  }
+
+  const dLeft  = sideDeflect(+1);
+  const dRight = sideDeflect(-1);
+  // Prefer the side that needs the smaller deflection (less visual distortion)
+  const side    = dLeft <= dRight ? +1 : -1;
+  const deflect = (side > 0 ? dLeft : dRight) * 1.35;
+
+  if (deflect <= 0) {
+    return `M${ax},${ay} C${c1x},${c1y} ${c2x},${c2y} ${ex},${ey}`;
+  }
+
+  // Nudge both control points perpendicular to the path
+  const nc1x = c1x + px*side*deflect, nc1y = c1y + py*side*deflect;
+  const nc2x = c2x + px*side*deflect, nc2y = c2y + py*side*deflect;
+
+  // Verify — if still blocked (e.g. dense clusters) apply a stronger deflection
+  const still = getBlockers([ax,ay],[nc1x,nc1y],[nc2x,nc2y],[ex,ey]);
+  if (still.length > 0) {
+    const sc = 2.2;
+    const fc1x = c1x + px*side*deflect*sc, fc1y = c1y + py*side*deflect*sc;
+    const fc2x = c2x + px*side*deflect*sc, fc2y = c2y + py*side*deflect*sc;
+    return `M${ax},${ay} C${fc1x},${fc1y} ${fc2x},${fc2y} ${ex},${ey}`;
+  }
+
+  return `M${ax},${ay} C${nc1x},${nc1y} ${nc2x},${nc2y} ${ex},${ey}`;
+}
+
+// ════════════════════════════════════════════════════
+// CONNECT MODE
+// ════════════════════════════════════════════════════
+
+const userConnections = [];
+
+const CONN_COLORS = [
+  '#7B8FAA', // dusty slate (default)
+  '#A0785A', // terracotta
+  '#C4B48A', // warm sand
+  '#7A9E7E', // sage green
+  '#6AAFA4', // muted teal
+  '#C49898', // dusty rose
+  '#9E8EC4', // soft lavender
+  '#B4A86A', // golden olive
+];
+let   userConnIdSeq   = 0;
+let   drawingConn     = null;  // { fromNode, fromAnchor }
+let   _connHighlight  = null;
+let   plusHoverNode   = null;
+let   plusHoverTimer  = null;
+
+function hidePlus() {
+  plusEl.style.display = 'none';
+  clearTimeout(plusHoverTimer);
+  plusHoverTimer = null;
+  plusHoverNode  = null;
+  plusEl._node   = null;
+  plusEl._anchor = null;
+}
+
+function showPlus(node, anchor) {
+  plusEl.setAttribute('transform', `translate(${anchor.x},${anchor.y})`);
+  plusEl._node   = node;
+  plusEl._anchor = anchor;
+  g.appendChild(plusEl); // re-append to stay on top of all nodes in SVG paint order
+  plusEl.style.display = '';
+}
+
+function cancelConn() {
+  drawingConn             = null;
+  connPreview.style.display = 'none';
+  if (_connHighlight) {
+    const el = nodeEls[_connHighlight];
+    if (el) { const bg = el.querySelector('.node-bg'); if (bg) bg.style.filter = ''; }
+    _connHighlight = null;
+  }
+}
+
+function finishConn(toNode, pt) {
+  if (!drawingConn || toNode.id === drawingConn.fromNode.id) { cancelConn(); setMode('select'); return; }
+  const toAnchor = nearestAnchorToPoint(toNode, pt);
+  const id   = 'uc' + (++userConnIdSeq);
+  const conn = {
+    id,
+    fromId:  drawingConn.fromNode.id,
+    toId:    toNode.id,
+    fromDir: drawingConn.fromAnchor.dir,
+    toDir:   toAnchor.dir,
+    style:   arrowStyle,
+  };
+  userConnections.push(conn);
+  renderUserConn(conn);
+  cancelConn();
+  hidePlus();
+  setMode('select');
+  saveToSupabase();
+}
+
+function renderUserConn(conn) {
+  const fn = nMap[conn.fromId], tn = nMap[conn.toId];
+  if (!fn || !tn) return;
+  const fa = getAnchorPos(fn, conn.fromDir);
+  const ta = getAnchorPos(tn, conn.toDir);
+  const d  = routedConnCurve(fa.x, fa.y, fa.dir, ta.x, ta.y, ta.dir, conn.fromId, conn.toId);
+
+  // Wide invisible path for easy clicking — lives in connHitLayerEl which sits
+  // above nodes in z-order so it actually receives pointer events.
+  const hitEl = svgEl('path', { d, fill: 'none', stroke: 'transparent', 'stroke-width': '12' });
+  hitEl.style.cursor = 'pointer';
+  connHitLayerEl.appendChild(hitEl);
+  conn._hitEl = hitEl;
+
+  const pathEl = svgEl('path', {
+    id:   conn.id,
+    d,
+    fill: 'none',
+    stroke: conn.color || CONN_COLORS[0],
+    'stroke-width': '2',
+    'stroke-dasharray': conn.style === 'dashed' ? '9 5' : 'none',
+    opacity: '0.85',
+  });
+  pathEl.style.pointerEvents = 'none'; // hit area handles all clicks
+  connLayerEl.appendChild(pathEl);
+  conn._el = pathEl;
+
+  // mousedown (not click) fires reliably even with tiny mouse jitter.
+  // stopPropagation also prevents the SVG canvas from starting a canvasDrag.
+  hitEl.addEventListener('mousedown', e => {
+    e.stopPropagation();
+    const pt = svgPoint(e);
+    // connHitLayerEl sits above nodes in SVG z-order so it receives pointer events
+    // first. If the click is actually over a node, defer to the node's own behavior
+    // so bubbles stay fully clickable even when arrows cross them.
+    const overNode = hitTest(pt);
+    if (overNode) {
+      if (mode === 'group') { toggleGroupSelNode(overNode); return; }
+      if (mode === 'select') {
+        const nodeGr = nodeEls[overNode.id];
+        nodeDrag = {
+          node: overNode,
+          startMx: e.clientX, startMy: e.clientY,
+          startNx: pos[overNode.id].x, startNy: pos[overNode.id].y,
+          moved: false,
+        };
+        if (nodeGr) { nodeGr.style.cursor = 'grabbing'; g.appendChild(nodeGr); }
+        return;
+      }
+    }
+    showConnControls(conn, pt.x, pt.y);
+  });
+}
+
+function refreshUserConnsForNode(nodeId) {
+  // Re-route all connections — a moved node can block or unblock any arrow,
+  // not only the ones whose endpoints were dragged.
+  refreshAllUserConns();
+}
+
+function refreshAllUserConns() {
+  userConnections.forEach(conn => {
+    if (!conn._el) return;
+    const fn = nMap[conn.fromId], tn = nMap[conn.toId];
+    if (!fn || !tn) return;
+    const fa = getAnchorPos(fn, conn.fromDir);
+    const ta = getAnchorPos(tn, conn.toDir);
+    const d  = routedConnCurve(fa.x, fa.y, fa.dir, ta.x, ta.y, ta.dir, conn.fromId, conn.toId);
+    conn._el.setAttribute('d', d);
+    if (conn._hitEl)  conn._hitEl.setAttribute('d', d);
+    if (conn._glowEl) conn._glowEl.setAttribute('d', d);
+    // Reposition label pill at new midpoint
+    if (conn.label) renderConnLabel(conn);
+    // If the action bar is open for this conn, dismiss it (its position is stale)
+    if (conn === _menuConn && conn._barEl) hideConnControls();
+  });
+}
+
+// ════════════════════════════════════════════════════
+// ARROW LABEL
+// ════════════════════════════════════════════════════
+
+// Return the midpoint of a path element using SVG's built-in length API.
+// Much more reliable than parsing the path string with a regex.
+function pathMidpoint(pathEl) {
+  const len = pathEl.getTotalLength();
+  if (!len) return null;
+  const pt = pathEl.getPointAtLength(len / 2);
+  return { x: pt.x, y: pt.y };
+}
+
+// Render (or re-render) the label pill at the bezier midpoint.
+function renderConnLabel(conn) {
+  if (conn._labelEl)    { conn._labelEl.remove();    conn._labelEl    = null; }
+  if (conn._labelHitEl) { conn._labelHitEl.remove(); conn._labelHitEl = null; }
+  if (!conn.label) return;
+
+  const mid = pathMidpoint(conn._el);
+  if (!mid) return;
+
+  const PAD_X = 8, PAD_Y = 3, FONT_SIZE = 11;
+  const color = conn.color || CONN_COLORS[0];
+
+  const grp = svgEl('g');
+
+  // Text — added to DOM first so getComputedTextLength() works
+  const txt = svgEl('text', {
+    x: mid.x, y: mid.y,
+    'text-anchor': 'middle', 'dominant-baseline': 'middle',
+    fill: color, 'font-size': FONT_SIZE,
+    'font-weight': '600', 'font-family': 'Segoe UI, system-ui, sans-serif',
+    'letter-spacing': '0.02em',
+  });
+  txt.textContent = conn.label;
+  txt.style.pointerEvents = 'none';
+  grp.appendChild(txt);
+  connLayerEl.appendChild(grp); // must be in DOM before measuring
+
+  const tw = txt.getComputedTextLength();
+  const w = tw + PAD_X * 2, h = FONT_SIZE + PAD_Y * 2;
+
+  // Invisible white rect — no border, no shadow — solely to mask the arrow line
+  // where it would pass behind the text, keeping the label legible.
+  const bg = svgEl('rect', {
+    x: mid.x - w / 2, y: mid.y - h / 2, width: w, height: h,
+    rx: 3, ry: 3,
+    fill: 'white', stroke: 'none',
+  });
+  grp.insertBefore(bg, txt);
+  conn._labelEl = grp;
+
+  // Transparent hit rect in the top layer so the label is click-to-edit
+  const hit = svgEl('rect', {
+    x: mid.x - w / 2, y: mid.y - h / 2, width: w, height: h,
+    rx: 5, fill: 'transparent',
+  });
+  hit.style.cursor = 'text';
+  connHitLayerEl.appendChild(hit);
+  conn._labelHitEl = hit;
+
+  hit.addEventListener('mousedown', e => {
+    e.stopPropagation();
+    editConnLabel(conn);
+  });
+}
+
+// Show the floating text input positioned at the arrow midpoint for label editing.
+const _labelInp = document.getElementById('conn-label-inp');
+
+function editConnLabel(conn) {
+  if (_menuConn) hideConnControls(); // close action bar if open
+
+  const mid = pathMidpoint(conn._el);
+  if (!mid) return;
+
+  // Convert SVG coords → screen coords
+  const svgElem = document.getElementById('svg');
+  const pt = svgElem.createSVGPoint();
+  pt.x = mid.x; pt.y = mid.y;
+  const screen = pt.matrixTransform(g.getScreenCTM());
+
+  _labelInp.value = conn.label || '';
+  _labelInp.style.left = (screen.x - 100) + 'px';
+  _labelInp.style.top  = (screen.y - 18)  + 'px';
+  _labelInp.style.display = 'block';
+  // Defer focus until after all mouse-event processing completes; otherwise
+  // the browser's mouseup handling can steal focus back and immediately fire blur.
+  setTimeout(() => { _labelInp.focus(); if (conn.label) _labelInp.select(); }, 0);
+
+  function commit() {
+    _labelInp.style.display = 'none';
+    conn.label = _labelInp.value.trim();
+    renderConnLabel(conn);
+    _labelInp.removeEventListener('blur',    onBlur);
+    _labelInp.removeEventListener('keydown', onKey);
+    saveToSupabase();
+  }
+  function onBlur() { commit(); }
+  function onKey(e) {
+    if (e.key === 'Enter')  { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') {
+      _labelInp.style.display = 'none';
+      _labelInp.removeEventListener('blur',    onBlur);
+      _labelInp.removeEventListener('keydown', onKey);
+    }
+  }
+  _labelInp.addEventListener('blur',    onBlur);
+  _labelInp.addEventListener('keydown', onKey);
+}
+
+// ════════════════════════════════════════════════════
+// ARROW SELECTION CONTROLS  (pure SVG — no HTML popup)
+// ════════════════════════════════════════════════════
+
+let _menuConn = null;  // currently selected connection
+
+// Build a scale-invariant SVG action bar above the click point.
+// BAR_W / BAR_H are in screen-pixel units; we scale by 1/scale so the bar
+// always looks the same size regardless of canvas zoom.
+function showConnControls(conn, svgX, svgY) {
+  if (_menuConn) hideConnControls();
+  _menuConn = conn;
+  document.getElementById('svg-wrap').style.zIndex = '201'; // float above fixed UI overlays
+
+  // ── Blue glow behind the arrow ──
+  const glowEl = svgEl('path', {
+    d: conn._el.getAttribute('d'),
+    fill: 'none', stroke: '#5b8af5',
+    'stroke-width': '10', 'stroke-linecap': 'round', opacity: '0.38',
+  });
+  glowEl.style.pointerEvents = 'none';
+  connLayerEl.insertBefore(glowEl, conn._el);
+  conn._glowEl = glowEl;
+
+  // ── Action bar ──
+  // Row 1: style toggle + delete  (ROW1_H px)
+  // Divider
+  // Row 2: color swatches          (ROW2_H px)
+  const BAR_W = 290, ROW1_H = 34, ROW2_H = 38, R = 8;
+  const BAR_H = ROW1_H + 1 + ROW2_H;
+  const s = 1 / scale; // screen-pixel → SVG unit
+
+  const bar = svgEl('g');
+  bar.setAttribute('transform',
+    `translate(${svgX - (BAR_W / 2) * s}, ${svgY - (BAR_H + 16) * s}) scale(${s})`);
+
+  // Background card
+  const bg = svgEl('rect', {
+    x: 0, y: 0, width: BAR_W, height: BAR_H,
+    rx: R, ry: R,
+    fill: 'white', stroke: '#5b8af5', 'stroke-width': '1.5',
+    filter: 'url(#sh)',
+  });
+  bar.appendChild(bg);
+
+  // ── Row 1: three equal-width buttons — Toggle | Label | Delete ──
+  const BTN_W = Math.floor((BAR_W - 4) / 3);  // equal thirds with 2px gaps
+  const TOGGLE_W = BTN_W;
+  const LABEL_START = TOGGLE_W + 2;
+  const LABEL_W = BTN_W;
+  const DELETE_START = LABEL_START + LABEL_W + 2;
+  const DELETE_W = BAR_W - DELETE_START - 1;
+
+  // Toggle button
+  const toggleBg = svgEl('rect', {
+    x: 1, y: 1, width: TOGGLE_W - 1, height: ROW1_H - 2, rx: R - 1, ry: R - 1,
+    fill: 'transparent',
+  });
+  toggleBg.style.cursor = 'pointer';
+  bar.appendChild(toggleBg);
+
+  const toggleTxt = svgEl('text', {
+    x: TOGGLE_W / 2, y: ROW1_H / 2,
+    'text-anchor': 'middle', 'dominant-baseline': 'middle',
+    fill: '#3a4fa0', 'font-size': '12.5', 'font-weight': '600',
+    'font-family': 'Segoe UI, system-ui, sans-serif',
+  });
+  toggleTxt.textContent = conn.style === 'dashed' ? '\u2500\u2500 Solid' : '\u254c\u254c Dashed';
+  toggleTxt.style.pointerEvents = 'none';
+  bar.appendChild(toggleTxt);
+
+  // Divider: toggle | label
+  bar.appendChild(svgEl('line', {
+    x1: TOGGLE_W + 1, y1: 6, x2: TOGGLE_W + 1, y2: ROW1_H - 6,
+    stroke: '#c5cfe8', 'stroke-width': '1',
+  }));
+
+  // Label button
+  const labelBg = svgEl('rect', {
+    x: LABEL_START, y: 1, width: LABEL_W - 1, height: ROW1_H - 2,
+    rx: R - 1, ry: R - 1, fill: 'transparent',
+  });
+  labelBg.style.cursor = 'pointer';
+  bar.appendChild(labelBg);
+
+  const labelTxt = svgEl('text', {
+    x: LABEL_START + LABEL_W / 2, y: ROW1_H / 2,
+    'text-anchor': 'middle', 'dominant-baseline': 'middle',
+    fill: '#3a4fa0', 'font-size': '12.5', 'font-weight': '600',
+    'font-family': 'Segoe UI, system-ui, sans-serif',
+  });
+  labelTxt.textContent = conn.label ? '\u270e Label' : '+ Label';
+  labelTxt.style.pointerEvents = 'none';
+  bar.appendChild(labelTxt);
+
+  // Divider: label | delete
+  bar.appendChild(svgEl('line', {
+    x1: DELETE_START - 1, y1: 6, x2: DELETE_START - 1, y2: ROW1_H - 6,
+    stroke: '#c5cfe8', 'stroke-width': '1',
+  }));
+
+  // Delete button
+  const deleteBg = svgEl('rect', {
+    x: DELETE_START, y: 1, width: DELETE_W, height: ROW1_H - 2,
+    rx: R - 1, ry: R - 1, fill: 'transparent',
+  });
+  deleteBg.style.cursor = 'pointer';
+  bar.appendChild(deleteBg);
+
+  const deleteTxt = svgEl('text', {
+    x: DELETE_START + DELETE_W / 2, y: ROW1_H / 2,
+    'text-anchor': 'middle', 'dominant-baseline': 'middle',
+    fill: '#dc2626', 'font-size': '12.5', 'font-weight': '700',
+    'font-family': 'Segoe UI, system-ui, sans-serif',
+  });
+  deleteTxt.textContent = '\u2715 Delete';
+  deleteTxt.style.pointerEvents = 'none';
+  bar.appendChild(deleteTxt);
+
+  // Horizontal divider between rows
+  bar.appendChild(svgEl('line', {
+    x1: 8, y1: ROW1_H, x2: BAR_W - 8, y2: ROW1_H,
+    stroke: '#e5e9f5', 'stroke-width': '1',
+  }));
+
+  // ── Row 2: Color swatches ──
+  const SWATCH_R = 9, GAP = 6;
+  const swatchY = ROW1_H + 1 + ROW2_H / 2;
+  const totalW  = CONN_COLORS.length * SWATCH_R * 2 + (CONN_COLORS.length - 1) * GAP;
+  const startX  = (BAR_W - totalW) / 2;
+  const curColor = conn.color || CONN_COLORS[0];
+
+  CONN_COLORS.forEach((color, i) => {
+    const cx = startX + i * (SWATCH_R * 2 + GAP) + SWATCH_R;
+
+    // Ring shows which color is currently active
+    if (color === curColor) {
+      bar.appendChild(svgEl('circle', {
+        cx, cy: swatchY, r: SWATCH_R + 3,
+        fill: 'none', stroke: color, 'stroke-width': '2', opacity: '0.5',
+      }));
+    }
+
+    const swatch = svgEl('circle', { cx, cy: swatchY, r: SWATCH_R, fill: color });
+    swatch.style.cursor = 'pointer';
+    bar.appendChild(swatch);
+
+    swatch.addEventListener('mouseenter', () =>
+      swatch.setAttribute('r', String(SWATCH_R + 2)));
+    swatch.addEventListener('mouseleave', () =>
+      swatch.setAttribute('r', String(SWATCH_R)));
+    swatch.addEventListener('mousedown', e => {
+      e.stopPropagation();
+      conn.color = color;
+      conn._el.setAttribute('stroke', color);
+      if (conn._glowEl) conn._glowEl.setAttribute('stroke', '#5b8af5'); // glow stays blue
+      hideConnControls();
+      saveToSupabase();
+    });
+  });
+
+  // ── Row 1 hover highlights ──
+  toggleBg.addEventListener('mouseenter', () => toggleBg.setAttribute('fill', '#eef2ff'));
+  toggleBg.addEventListener('mouseleave', () => toggleBg.setAttribute('fill', 'transparent'));
+  labelBg.addEventListener('mouseenter',  () => labelBg.setAttribute('fill',  '#eef2ff'));
+  labelBg.addEventListener('mouseleave',  () => labelBg.setAttribute('fill',  'transparent'));
+  deleteBg.addEventListener('mouseenter', () => deleteBg.setAttribute('fill', '#fef2f2'));
+  deleteBg.addEventListener('mouseleave', () => deleteBg.setAttribute('fill', 'transparent'));
+
+  // Actions — mousedown (not click) for the same jitter-immunity reason
+  toggleBg.addEventListener('mousedown', e => {
+    e.stopPropagation();
+    conn.style = conn.style === 'dashed' ? 'solid' : 'dashed';
+    conn._el.setAttribute('stroke-dasharray', conn.style === 'dashed' ? '9 5' : 'none');
+    hideConnControls();
+    saveToSupabase();
+  });
+  labelBg.addEventListener('mousedown', e => {
+    e.stopPropagation();
+    e.preventDefault(); // prevent browser from shifting focus during this click
+    hideConnControls();
+    editConnLabel(conn);
+  });
+  deleteBg.addEventListener('mousedown', e => {
+    e.stopPropagation();
+    const idx = userConnections.indexOf(conn);
+    if (idx !== -1) userConnections.splice(idx, 1);
+    if (conn._hitEl)     conn._hitEl.remove();
+    if (conn._glowEl)    { conn._glowEl.remove();    conn._glowEl    = null; }
+    if (conn._labelEl)   { conn._labelEl.remove();   conn._labelEl   = null; }
+    if (conn._labelHitEl){ conn._labelHitEl.remove(); conn._labelHitEl = null; }
+    if (conn._el)        conn._el.remove();
+    hideConnControls();
+    saveToSupabase();
+  });
+
+  conn._barEl = bar;
+  connHitLayerEl.appendChild(bar);
+}
+
+function hideConnControls() {
+  if (_menuConn) {
+    if (_menuConn._glowEl) { _menuConn._glowEl.remove(); _menuConn._glowEl = null; }
+    if (_menuConn._barEl)  { _menuConn._barEl.remove();  _menuConn._barEl  = null; }
+    // _labelEl and _labelHitEl are intentionally preserved — labels persist after bar closes
+  }
+  _menuConn = null;
+  document.getElementById('svg-wrap').style.zIndex = ''; // restore normal stacking order
+}
+
+// Dismiss when pressing anywhere outside the action bar (capture phase catches
+// it even if a node's mousedown calls stopPropagation).
+window.addEventListener('mousedown', e => {
+  if (_menuConn && _menuConn._barEl && !_menuConn._barEl.contains(e.target)) {
+    hideConnControls();
+  }
+}, true);
+
+// ════════════════════════════════════════════════════
+// GROUP MODE
+// ════════════════════════════════════════════════════
+
+const userGroups     = [];
+let   userGroupIdSeq = 0;
+let   drawingGroup   = null;
+let   pendingGroup   = null;
+let   pendingGroupColorIdx = 0;
+
+// ── Blob (multi-select) group state
+const groupSelNodeIds  = new Set();   // IDs currently selected for a blob group
+const groupSelRingEls  = {};          // nodeId → SVG ring element
+
+function toggleGroupSelNode(node) {
+  if (groupSelNodeIds.has(node.id)) {
+    groupSelNodeIds.delete(node.id);
+    if (groupSelRingEls[node.id]) { groupSelRingEls[node.id].remove(); delete groupSelRingEls[node.id]; }
+  } else {
+    groupSelNodeIds.add(node.id);
+    const p = pos[node.id], pad = 8;
+    const ring = svgEl('rect', {
+      x: p.x - node.w / 2 - pad, y: p.y - node.h / 2 - pad,
+      width: node.w + pad * 2,   height: node.h + pad * 2,
+      rx: 16, ry: 16,
+      fill: 'none', stroke: '#5060b0',
+      'stroke-width': '2.5', 'stroke-dasharray': '6 3', opacity: '0.75',
+    });
+    ring.style.pointerEvents = 'none';
+    groupsLayerEl.appendChild(ring);
+    groupSelRingEls[node.id] = ring;
+  }
+  updateGroupSelBar();
+}
+
+function updateGroupSelRingPos(nodeId) {
+  const ring = groupSelRingEls[nodeId];
+  if (!ring) return;
+  const node = nMap[nodeId], p = pos[nodeId], pad = 8;
+  if (!node) return;
+  ring.setAttribute('x',      p.x - node.w / 2 - pad);
+  ring.setAttribute('y',      p.y - node.h / 2 - pad);
+  ring.setAttribute('width',  node.w + pad * 2);
+  ring.setAttribute('height', node.h + pad * 2);
+}
+
+function updateGroupSelBar() {
+  const bar = document.getElementById('grpsel-bar');
+  const n = groupSelNodeIds.size;
+  if (n > 0 && mode === 'group') {
+    document.getElementById('grpsel-count').textContent =
+      n === 1 ? '1 bubble selected' : `${n} bubbles selected`;
+    bar.style.display = 'flex';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function clearGroupSel() {
+  groupSelNodeIds.forEach(id => {
+    if (groupSelRingEls[id]) { groupSelRingEls[id].remove(); delete groupSelRingEls[id]; }
+  });
+  groupSelNodeIds.clear();
+  updateGroupSelBar();
+}
+
+// ════════════════════════════════════════════════════
+// MULTI-SELECT (lasso)
+// ════════════════════════════════════════════════════
+
+function toggleLasso() {
+  lassoActive = !lassoActive;
+  const b = document.getElementById('btn-lasso');
+  if (b) b.classList.toggle('active', lassoActive);
+  const wrap = document.getElementById('svg-wrap');
+  if (wrap) wrap.style.cursor = lassoActive ? 'crosshair' : (mode === 'select' ? 'grab' : 'crosshair');
+}
+
+function addMultiSel(nodeId) {
+  if (multiSelIds.has(nodeId)) return;
+  const node = nMap[nodeId], p = pos[nodeId];
+  if (!node || !p) return;
+  multiSelIds.add(nodeId);
+  const pad = 6;
+  const ring = svgEl('rect', {
+    x: String(p.x - node.w / 2 - pad), y: String(p.y - node.h / 2 - pad),
+    width: String(node.w + pad * 2),    height: String(node.h + pad * 2),
+    rx: '14', ry: '14',
+    fill: 'rgba(82,120,230,0.12)', stroke: '#5080e0',
+    'stroke-width': '2', opacity: '0.9',
+  });
+  ring.style.pointerEvents = 'none';
+  groupsLayerEl.appendChild(ring);
+  multiSelRingEls[nodeId] = ring;
+  updateMultiSelBar();
+}
+
+function removeMultiSel(nodeId) {
+  multiSelIds.delete(nodeId);
+  if (multiSelRingEls[nodeId]) { multiSelRingEls[nodeId].remove(); delete multiSelRingEls[nodeId]; }
+  updateMultiSelBar();
+}
+
+function clearMultiSel() {
+  multiSelIds.forEach(id => {
+    if (multiSelRingEls[id]) { multiSelRingEls[id].remove(); delete multiSelRingEls[id]; }
+  });
+  multiSelIds.clear();
+  updateMultiSelBar();
+}
+
+function updateMultiSelRingPos(nodeId) {
+  const ring = multiSelRingEls[nodeId];
+  if (!ring) return;
+  const node = nMap[nodeId], p = pos[nodeId], pad = 6;
+  if (!node) return;
+  ring.setAttribute('x',      String(p.x - node.w / 2 - pad));
+  ring.setAttribute('y',      String(p.y - node.h / 2 - pad));
+  ring.setAttribute('width',  String(node.w + pad * 2));
+  ring.setAttribute('height', String(node.h + pad * 2));
+}
+
+function updateMultiSelBar() {
+  const bar = document.getElementById('multisel-bar');
+  const n = multiSelIds.size;
+  if (n > 1) {
+    document.getElementById('multisel-count').textContent =
+      n === 1 ? '1 bubble selected' : `${n} bubbles selected`;
+    bar.style.display = 'flex';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function createBlobGroup() {
+  if (groupSelNodeIds.size < 1) return;
+
+  const selIds = [...groupSelNodeIds];
+  const PAD = 52; // same padding as blob for visual consistency
+
+  // Compute bounding box of selected nodes
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  selIds.forEach(id => {
+    const node = nMap[id], p = pos[id];
+    if (!node || !p) return;
+    minX = Math.min(minX, p.x - node.w / 2);
+    minY = Math.min(minY, p.y - node.h / 2);
+    maxX = Math.max(maxX, p.x + node.w / 2);
+    maxY = Math.max(maxY, p.y + node.h / 2);
+  });
+  const bx = minX - PAD, by = minY - PAD;
+  const bw = (maxX - minX) + PAD * 2, bh = (maxY - minY) + PAD * 2;
+
+  // Use a rectangle unless a non-selected node falls inside the bounding box
+  const needsBlob = Object.keys(nMap).some(id => {
+    if (groupSelNodeIds.has(id)) return false;
+    const node = nMap[id], p = pos[id];
+    if (!node || !p) return false;
+    return (p.x + node.w / 2 > bx && p.x - node.w / 2 < bx + bw &&
+            p.y + node.h / 2 > by && p.y - node.h / 2 < by + bh);
+  });
+
+  if (needsBlob) {
+    pendingGroup = { type: 'blob', nodeIds: selIds };
+  } else {
+    pendingGroup = { type: 'autoRect', nodeIds: selIds, x: bx, y: by, w: bw, h: bh };
+  }
+
+  document.getElementById('grpsel-bar').style.display = 'none';
+  document.getElementById('group-label-inp').value = '';
+  setGroupColor(0);
+  document.getElementById('group-modal').style.display = 'block';
+  setTimeout(() => document.getElementById('group-label-inp').focus(), 60);
+}
+
+// ── Smooth closed cubic bezier through an ordered point array (Catmull-Rom → Bezier).
+// T = tension: 1/6 is the mathematically exact Catmull-Rom value; lower keeps
+// the curve tighter to the data, higher rounds corners more aggressively.
+function smoothClosedPath(pts) {
+  const n = pts.length;
+  if (n < 2) return '';
+  const T = 1 / 6;
+  let d = `M${pts[0][0].toFixed(2)},${pts[0][1].toFixed(2)}`;
+  for (let i = 0; i < n; i++) {
+    const p0 = pts[(i - 1 + n) % n];
+    const p1 = pts[i];
+    const p2 = pts[(i + 1) % n];
+    const p3 = pts[(i + 2) % n];
+    const cp1x = p1[0] + T * (p2[0] - p0[0]);
+    const cp1y = p1[1] + T * (p2[1] - p0[1]);
+    const cp2x = p2[0] - T * (p3[0] - p1[0]);
+    const cp2y = p2[1] - T * (p3[1] - p1[1]);
+    d += ` C${cp1x.toFixed(2)},${cp1y.toFixed(2)} ${cp2x.toFixed(2)},${cp2y.toFixed(2)} ${p2[0].toFixed(2)},${p2[1].toFixed(2)}`;
+  }
+  return d + ' Z';
+}
+
+// ── Compute an organic blob SVG path that wraps all given node IDs.
+//
+// Algorithm: metaball implicit surface + marching squares.
+//   Each node emits a Gaussian potential field that decays with distance from
+//   its padded bounding-box surface.  Marching squares extracts the isosurface
+//   at a chosen threshold, naturally producing concave waists between separated
+//   nodes and tight, form-fitting contours around irregular clusters.
+function computeBlobPath(nodeIds) {
+  if (!nodeIds || nodeIds.length === 0) return '';
+
+  const PAD    = 18;   // hard clearance around each node's bounding box (SVG units)
+  const SIGMA  = 36;   // Gaussian decay distance beyond PAD
+  const THRESH = 0.50; // isosurface threshold (value >= 1 = fully inside padded box)
+  const STEP   = 10;   // marching-squares grid resolution (SVG units)
+
+  // Each node contributes exp(-d^2/2*sigma^2) where d = distance beyond its padded bbox.
+  function sampleField(x, y) {
+    let v = 0;
+    for (const id of nodeIds) {
+      const node = nMap[id], p = pos[id];
+      if (!node || !p) continue;
+      const dx = Math.max(0, Math.abs(x - p.x) - (node.w / 2 + PAD));
+      const dy = Math.max(0, Math.abs(y - p.y) - (node.h / 2 + PAD));
+      const d  = Math.sqrt(dx * dx + dy * dy);
+      v += Math.exp(-(d * d) / (2 * SIGMA * SIGMA));
+    }
+    return v;
+  }
+
+  const MARGIN = PAD + SIGMA * 3.2;
+  let gx0 = Infinity, gy0 = Infinity, gx1 = -Infinity, gy1 = -Infinity;
+  nodeIds.forEach(id => {
+    const node = nMap[id], p = pos[id];
+    if (!node || !p) return;
+    gx0 = Math.min(gx0, p.x - node.w / 2 - MARGIN);
+    gy0 = Math.min(gy0, p.y - node.h / 2 - MARGIN);
+    gx1 = Math.max(gx1, p.x + node.w / 2 + MARGIN);
+    gy1 = Math.max(gy1, p.y + node.h / 2 + MARGIN);
+  });
+  const cols = Math.ceil((gx1 - gx0) / STEP) + 2;
+  const rows = Math.ceil((gy1 - gy0) / STEP) + 2;
+
+  const F = new Float32Array(cols * rows);
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++)
+      F[r * cols + c] = sampleField(gx0 + c * STEP, gy0 + r * STEP);
+
+  // Marching squares: bit3=TL, bit2=TR, bit1=BR, bit0=BL
+  const segs = [];
+  function lerpPt(c0, r0, c1, r1) {
+    const v0 = F[r0 * cols + c0], v1 = F[r1 * cols + c1];
+    const t  = (THRESH - v0) / (v1 - v0);
+    return [gx0 + (c0 + t * (c1 - c0)) * STEP, gy0 + (r0 + t * (r1 - r0)) * STEP];
+  }
+  for (let r = 0; r < rows - 1; r++) {
+    for (let c = 0; c < cols - 1; c++) {
+      const tl = F[r * cols + c],       tr = F[r * cols + c + 1];
+      const bl = F[(r+1) * cols + c],   br = F[(r+1) * cols + c + 1];
+      const idx = ((tl>=THRESH)?8:0) | ((tr>=THRESH)?4:0) |
+                  ((br>=THRESH)?2:0) | ((bl>=THRESH)?1:0);
+      if (idx === 0 || idx === 15) continue;
+      const T = () => lerpPt(c,   r,   c+1, r);
+      const R = () => lerpPt(c+1, r,   c+1, r+1);
+      const B = () => lerpPt(c,   r+1, c+1, r+1);
+      const L = () => lerpPt(c,   r,   c,   r+1);
+      const mid = (tl + tr + br + bl) * 0.25;
+      switch (idx) {
+        case  1: segs.push([L(), B()]); break;
+        case  2: segs.push([B(), R()]); break;
+        case  3: segs.push([L(), R()]); break;
+        case  4: segs.push([T(), R()]); break;
+        case  5: if (mid >= THRESH) { segs.push([T(), L()]); segs.push([B(), R()]); }
+                 else               { segs.push([T(), R()]); segs.push([L(), B()]); } break;
+        case  6: segs.push([T(), B()]); break;
+        case  7: segs.push([T(), L()]); break;
+        case  8: segs.push([T(), L()]); break;
+        case  9: segs.push([T(), B()]); break;
+        case 10: if (mid >= THRESH) { segs.push([T(), R()]); segs.push([L(), B()]); }
+                 else               { segs.push([T(), L()]); segs.push([B(), R()]); } break;
+        case 11: segs.push([T(), R()]); break;
+        case 12: segs.push([L(), R()]); break;
+        case 13: segs.push([B(), R()]); break;
+        case 14: segs.push([L(), B()]); break;
+      }
+    }
+  }
+  if (segs.length === 0) return '';
+
+  // Chain segments into the largest closed polygon
+  const Q   = 1 / (STEP * 0.05);
+  const qk  = ([x, y]) => `${Math.round(x * Q)}_${Math.round(y * Q)}`;
+  const adj = new Map();
+  segs.forEach(([a, b], i) => {
+    for (const [k, end] of [[qk(a), 0], [qk(b), 1]]) {
+      if (!adj.has(k)) adj.set(k, []);
+      adj.get(k).push([i, end]);
+    }
+  });
+
+  const used = new Uint8Array(segs.length);
+  let   best = [];
+
+  for (let s0 = 0; s0 < segs.length; s0++) {
+    if (used[s0]) continue;
+    const poly = [];
+    let si = s0, enterEnd = 0;
+    for (let guard = segs.length + 4; guard > 0; guard--) {
+      if (used[si]) break;
+      used[si] = 1;
+      const exitPt = segs[si][1 - enterEnd];
+      poly.push(exitPt);
+      const nexts = (adj.get(qk(exitPt)) || []).filter(([ni]) => !used[ni]);
+      if (!nexts.length) break;
+      [si, enterEnd] = nexts[0];
+    }
+    if (poly.length > best.length) best = poly;
+  }
+
+  if (best.length < 3) return '';
+
+  // Thin to every other vertex to remove marching-squares staircase noise
+  const thinned = best.filter((_, i) => i % 2 === 0);
+  return smoothClosedPath(thinned.length >= 3 ? thinned : best);
+}
+
+// ── Label sits just above the topmost point of the blob
+function blobGroupLabelPos(grp) {
+  const PAD = 52; // matches computeBlobPath
+  let minY = Infinity, sumX = 0, count = 0;
+  grp.nodeIds.forEach(id => {
+    const node = nMap[id], p = pos[id];
+    if (!node) return;
+    if (p.y - node.h / 2 < minY) minY = p.y - node.h / 2;
+    sumX += p.x; count++;
+  });
+  return { x: count ? sumX / count : 0, y: minY - PAD - 20 };
+}
+
+// ── Re-draw all node-following groups (called after any node drag)
+function refreshAllBlobGroups() {
+  userGroups.forEach(grp => {
+    if (grp.type === 'blob') {
+      const d = computeBlobPath(grp.nodeIds);
+      if (grp._pathEl) grp._pathEl.setAttribute('d', d);
+      if (grp._txt) {
+        const lp = blobGroupLabelPos(grp);
+        grp._txt.setAttribute('x', String(lp.x));
+        grp._txt.setAttribute('y', String(lp.y));
+      }
+    } else if (grp.type === 'autoRect' && grp.nodeIds) {
+      const PAD = 52;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      grp.nodeIds.forEach(id => {
+        const node = nMap[id], p = pos[id];
+        if (!node || !p) return;
+        minX = Math.min(minX, p.x - node.w / 2);
+        minY = Math.min(minY, p.y - node.h / 2);
+        maxX = Math.max(maxX, p.x + node.w / 2);
+        maxY = Math.max(maxY, p.y + node.h / 2);
+      });
+      grp.x = minX - PAD; grp.y = minY - PAD;
+      grp.w = (maxX - minX) + PAD * 2; grp.h = (maxY - minY) + PAD * 2;
+      if (grp._rect) {
+        grp._rect.setAttribute('x', String(grp.x));
+        grp._rect.setAttribute('y', String(grp.y));
+        grp._rect.setAttribute('width', String(grp.w));
+        grp._rect.setAttribute('height', String(grp.h));
+      }
+      if (grp._txt) {
+        grp._txt.setAttribute('x', String(grp.x + grp.w / 2));
+        grp._txt.setAttribute('y', String(grp.y - 8));
+      }
+    }
+  });
+}
+
+function setGroupColor(i) {
+  pendingGroupColorIdx = i;
+  document.querySelectorAll('.grp-swatch').forEach((el, j) => {
+    el.classList.toggle('selected', j === i);
+  });
+}
+
+const GROUP_PALETTES = [
+  { fill: 'rgba(120,140,220,0.10)', stroke: '#5060b0' },
+  { fill: 'rgba(60,170,100,0.10)',  stroke: '#2a8a50' },
+  { fill: 'rgba(220,130,50,0.10)',  stroke: '#b06020' },
+  { fill: 'rgba(200,60,60,0.10)',   stroke: '#a02020' },
+  { fill: 'rgba(150,80,220,0.10)',  stroke: '#7030b0' },
+];
+
+function cancelGroupDraw() {
+  if (drawingGroup) {
+    if (drawingGroup.previewEl) drawingGroup.previewEl.remove();
+    drawingGroup = null;
+  }
+  clearGroupSel();
+}
+
+function cancelGroup() {
+  if (pendingGroup && pendingGroup.previewEl) pendingGroup.previewEl.remove();
+  pendingGroup = null;
+  document.getElementById('group-modal').style.display = 'none';
+}
+
+function confirmGroup() {
+  if (!pendingGroup) return;
+  const label = document.getElementById('group-label-inp').value.trim() || 'Group';
+  document.getElementById('group-modal').style.display = 'none';
+  if (pendingGroup.previewEl) pendingGroup.previewEl.remove();
+  const col = GROUP_PALETTES[pendingGroupColorIdx];
+  const grp = { ...pendingGroup, id: 'grp' + (++userGroupIdSeq), label, col };
+  userGroups.push(grp);
+  renderGroup(grp);
+  pendingGroup = null;
+  clearGroupSel();
+  updateGroupsLegend();
+}
+
+function updateGroupsLegend() {
+  const panel = document.getElementById('groups-legend');
+  // Remove all existing rows (keep the h4)
+  const h4 = panel.querySelector('h4');
+  while (panel.lastChild !== h4) panel.removeChild(panel.lastChild);
+  if (userGroups.length === 0) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
+  userGroups.forEach(grp => {
+    const row = document.createElement('div');
+    row.className = 'grp-row';
+    row.innerHTML = `<div class="grp-row-dot" style="background:${grp.col.stroke};opacity:0.85"></div>${grp.label}`;
+    panel.appendChild(row);
+  });
+}
+
+// Returns {x,y,w,h} for a group resize handle strip on the given side.
+function groupHandleGeom(grp, side) {
+  const HSIZE = 8;
+  if (side === 'L') return { x: grp.x - HSIZE / 2,             y: grp.y,                      w: HSIZE,  h: grp.h  };
+  if (side === 'R') return { x: grp.x + grp.w - HSIZE / 2,     y: grp.y,                      w: HSIZE,  h: grp.h  };
+  if (side === 'T') return { x: grp.x,                          y: grp.y - HSIZE / 2,          w: grp.w,  h: HSIZE  };
+                    return { x: grp.x,                          y: grp.y + grp.h - HSIZE / 2,  w: grp.w,  h: HSIZE  };
+}
+
+function addGroupResizeHandles(grp) {
+  const SIDES = [
+    { side: 'L', cur: 'ew-resize' },
+    { side: 'R', cur: 'ew-resize' },
+    { side: 'T', cur: 'ns-resize' },
+    { side: 'B', cur: 'ns-resize' },
+  ];
+  grp._handleEls = SIDES.map(({ side, cur }) => {
+    const geom   = groupHandleGeom(grp, side);
+    const handle = svgEl('rect', {
+      x: geom.x, y: geom.y, width: geom.w, height: geom.h,
+      fill: 'transparent', stroke: 'none',
+    });
+    handle.style.cursor = cur;
+    handle.addEventListener('mousedown', e => {
+      e.stopPropagation();
+      groupResizeDrag = {
+        grp, side,
+        startMx: e.clientX, startMy: e.clientY,
+        startX: grp.x, startY: grp.y,
+        startW: grp.w, startH: grp.h,
+      };
+    });
+    groupsLayerEl.appendChild(handle);
+    return handle;
+  });
+}
+
+function updateGroupResizeHandles(grp) {
+  if (!grp._handleEls) return;
+  const sides = ['L', 'R', 'T', 'B'];
+  grp._handleEls.forEach((h, i) => {
+    const geom = groupHandleGeom(grp, sides[i]);
+    h.setAttribute('x', geom.x);
+    h.setAttribute('y', geom.y);
+    h.setAttribute('width',  geom.w);
+    h.setAttribute('height', geom.h);
+  });
+}
+
+function renderGroup(grp) {
+  if (grp.type === 'blob') {
+    // Organic blob shape spanning all member nodes
+    const d = computeBlobPath(grp.nodeIds);
+    const pathEl = svgEl('path', {
+      d,
+      fill: grp.col.fill, stroke: grp.col.stroke,
+      'stroke-width': '1.5', 'stroke-dasharray': '3 4',
+      'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+    });
+    const lp = blobGroupLabelPos(grp);
+    const txt = document.createElementNS(svgNS, 'text');
+    txt.textContent = grp.label;
+    txt.setAttribute('x',            String(lp.x));
+    txt.setAttribute('y',            String(lp.y));
+    txt.setAttribute('text-anchor',  'middle');
+    txt.setAttribute('fill',         grp.col.stroke);
+    txt.setAttribute('font-size',    '13');
+    txt.setAttribute('font-weight',  '700');
+    txt.setAttribute('font-family',  'Segoe UI, system-ui, sans-serif');
+    txt.setAttribute('opacity',      '0.9');
+    groupsLayerEl.appendChild(pathEl);
+    groupsLayerEl.appendChild(txt);
+    grp._pathEl = pathEl;
+    grp._txt    = txt;
+    return; // blob groups have no resize handles — they follow their nodes
+  }
+
+  // ── Auto-rectangle group (created via click-select when rect is unambiguous) ──
+  if (grp.type === 'autoRect') {
+    const rect = svgEl('rect', {
+      x: grp.x, y: grp.y, width: grp.w, height: grp.h,
+      rx: 18, ry: 18,
+      fill: grp.col.fill, stroke: grp.col.stroke,
+      'stroke-width': '1.5', 'stroke-dasharray': '3 4',
+    });
+    const txt = document.createElementNS(svgNS, 'text');
+    txt.textContent = grp.label;
+    txt.setAttribute('x',           String(grp.x + grp.w / 2));
+    txt.setAttribute('y',           String(grp.y - 8));
+    txt.setAttribute('text-anchor', 'middle');
+    txt.setAttribute('fill',        grp.col.stroke);
+    txt.setAttribute('font-size',   '13');
+    txt.setAttribute('font-weight', '700');
+    txt.setAttribute('font-family', 'Segoe UI, system-ui, sans-serif');
+    txt.setAttribute('opacity',     '0.9');
+    groupsLayerEl.appendChild(rect);
+    groupsLayerEl.appendChild(txt);
+    grp._rect = rect;
+    grp._txt  = txt;
+    return; // no resize handles — follows its nodes
+  }
+
+  // ── Rectangle group (existing behaviour, drawn by drag) ──
+  const rect = svgEl('rect', {
+    x: grp.x, y: grp.y, width: grp.w, height: grp.h,
+    rx: 18, ry: 18,
+    fill: grp.col.fill, stroke: grp.col.stroke,
+    'stroke-width': '1.5', 'stroke-dasharray': '3 4',
+  });
+  const txt = document.createElementNS(svgNS, 'text');
+  txt.textContent = grp.label;
+  txt.setAttribute('x',            String(grp.x + grp.w / 2));
+  txt.setAttribute('y',            String(grp.y - 8));
+  txt.setAttribute('text-anchor',  'middle');
+  txt.setAttribute('fill',         grp.col.stroke);
+  txt.setAttribute('font-size',    '13');
+  txt.setAttribute('font-weight',  '700');
+  txt.setAttribute('font-family',  'Segoe UI, system-ui, sans-serif');
+  txt.setAttribute('opacity',      '0.9');
+  groupsLayerEl.appendChild(rect);
+  groupsLayerEl.appendChild(txt);
+  grp._rect = rect;
+  grp._txt  = txt;
+  addGroupResizeHandles(grp);
+}
+
+// ════════════════════════════════════════════════════
+// ADD NODE
+// ════════════════════════════════════════════════════
+
+let userNodeIdSeq = 0;
+
+// Build teammate dot-picker inside the add-node modal (called once on load)
+(function buildAssignPicker() {
+  const row = document.getElementById('add-node-assign-row');
+  Object.entries(TEAMMATES).forEach(([name, c]) => {
+    const dot = document.createElement('div');
+    dot.className = 'assign-dot';
+    dot.style.background = c.dot;
+    dot.title = name;
+    dot.dataset.name = name;
+    dot.addEventListener('click', () => dot.classList.toggle('selected'));
+    row.appendChild(dot);
+  });
+})();
+
+// ════════════════════════════════════════════════════
+// SELF-ASSIGN TO EXISTING PROJECT
+// ════════════════════════════════════════════════════
+
+let _selfAssignNode = null;
+let _selfAssignDotType = 'current';
+
+// Build the teammate dot picker in the panel self-assign section (once on load)
+(function buildSelfAssignPicker() {
+  const row = document.getElementById('self-assign-teammate-row');
+  Object.entries(TEAMMATES).forEach(([name, c]) => {
+    const dot = document.createElement('div');
+    dot.className = 'sa-dot';
+    dot.style.background = c.dot;
+    dot.title = name;
+    dot.dataset.name = name;
+    dot.addEventListener('click', () => {
+      // Allow selecting only one at a time (toggle off if clicking same)
+      const wasSelected = dot.classList.contains('selected');
+      row.querySelectorAll('.sa-dot').forEach(d => d.classList.remove('selected'));
+      if (!wasSelected) dot.classList.add('selected');
+    });
+    row.appendChild(dot);
+  });
+})();
+
+function setSelfAssignType(btn) {
+  document.querySelectorAll('#self-assign-type-row .dot-type-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  _selfAssignDotType = btn.dataset.type;
+}
+
+function confirmSelfAssign() {
+  if (!_selfAssignNode) return;
+  const selected = document.querySelector('#self-assign-teammate-row .sa-dot.selected');
+  if (!selected) return;
+  const name = selected.dataset.name;
+  const dtype = document.querySelector('#self-assign-type-row .dot-type-btn.active')?.dataset.type || 'current';
+  // Check if this person is already on the project with the same dot type
+  const existing = _selfAssignNode.people.find(p => p.name === name && p.dotType === dtype);
+  if (!existing) {
+    _selfAssignNode.people.push({ name, dotType: dtype });
+    // Grow node height if needed to show dots
+    if (_selfAssignNode.h < 60) _selfAssignNode.h = 66;
+    rebuildNode(_selfAssignNode);
+    // Refresh open panel badges
+    openPanel(_selfAssignNode);
+    saveToSupabase();
+  }
+}
+
+function showAddNodeModal() {
+  document.getElementById('add-node-inp').value = '';
+  // Deselect all teammate dots and reset dot type to "current"
+  document.querySelectorAll('.assign-dot').forEach(d => d.classList.remove('selected'));
+  document.querySelectorAll('#add-node-dot-type-row .dot-type-btn').forEach((b, i) => b.classList.toggle('active', i === 0));
+  document.getElementById('add-node-modal').style.display = 'block';
+  setTimeout(() => document.getElementById('add-node-inp').focus(), 60);
+}
+
+function hideAddNodeModal() {
+  document.getElementById('add-node-modal').style.display = 'none';
+  _dblClickPos = null;
+}
+
+function setAddNodeDotType(btn) {
+  document.querySelectorAll('#add-node-dot-type-row .dot-type-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function confirmAddNode() {
+  const rawLabel = document.getElementById('add-node-inp').value.trim();
+  if (!rawLabel) return;
+  const type = document.getElementById('add-node-type').value;
+  // Collect selected teammates with their dot type
+  const activeTypeBtn = document.querySelector('#add-node-dot-type-row .dot-type-btn.active');
+  const dotType = activeTypeBtn ? activeTypeBtn.dataset.type : 'current';
+  const selectedPeople = [];
+  document.querySelectorAll('.assign-dot.selected').forEach(d => {
+    selectedPeople.push({ name: d.dataset.name, dotType });
+  });
+  hideAddNodeModal();
+  const cx   = _dblClickPos ? _dblClickPos.x : (window.innerWidth  / 2 - tx) / scale;
+  const cy   = _dblClickPos ? _dblClickPos.y : (window.innerHeight / 2 - ty) / scale;
+  _dblClickPos = null;
+  const hasPeople = selectedPeople.length > 0;
+  const ww   = Math.min(220, Math.max(130, rawLabel.length * 7.5 + 40));
+  const hh   = hasPeople ? 66 : 52;
+  const id   = 'un' + (++userNodeIdSeq);
+  const node = {
+    id, label: rawLabel, x: cx, y: cy, type, w: ww, h: hh,
+    people: selectedPeople, users: [], desc: '', _user: true,
+  };
+  userCreatedNodes.push(node);
+  nMap[id]        = node;
+  pos[id]         = { x: cx, y: cy };
+  nodeToEdges[id] = [];
+  drawUserNode(node);
+  saveToSupabase();
+}
+
+function drawUserNode(node) {
+  const gr = svgEl('g', { class: 'node', transform: `translate(${node.x},${node.y})` });
+  nodeEls[node.id] = gr;
+  g.appendChild(gr);
+
+  if (node.people && node.people.length > 0) buildComplexNodeContent(node, gr);
+  else buildUserNodeContent(node, gr);
+  addResizeHandles(node, gr);
+
+  gr.style.cursor = 'grab';
+  gr.addEventListener('mousedown', e => {
+    if (mode === 'group') {
+      e.stopPropagation();
+      toggleGroupSelNode(node);
+      return;
+    }
+    if (mode !== 'select') return;
+    e.stopPropagation();
+    // Shift+click: toggle this node in/out of multi-selection
+    if (e.shiftKey) {
+      if (multiSelIds.has(node.id)) removeMultiSel(node.id);
+      else addMultiSel(node.id);
+      return;
+    }
+    // If this node is part of a multi-selection, start a multi-drag
+    if (multiSelIds.size > 1 && multiSelIds.has(node.id)) {
+      const startPositions = {};
+      multiSelIds.forEach(id => { startPositions[id] = { x: pos[id].x, y: pos[id].y }; });
+      nodeDrag = {
+        node,
+        startMx: e.clientX, startMy: e.clientY,
+        startNx: pos[node.id].x, startNy: pos[node.id].y,
+        moved: false,
+        isMulti: true, startPositions,
+      };
+    } else {
+      clearMultiSel();
+      nodeDrag = {
+        node,
+        startMx: e.clientX, startMy: e.clientY,
+        startNx: pos[node.id].x, startNy: pos[node.id].y,
+        moved: false,
+      };
+    }
+    gr.style.cursor = 'grabbing';
+    g.appendChild(gr);
+  });
+  gr.addEventListener('mouseup', e => {
+    if (mode === 'connect' && drawingConn) finishConn(node, svgPoint(e));
+  });
+}
+
+// ════════════════════════════════════════════════════
+// EVENT WIRING — connect & group modes
+// ════════════════════════════════════════════════════
+
+// Wire mouseup on existing nodes so dropping a connection on them works
+NODES.forEach(node => {
+  const gr = nodeEls[node.id];
+  if (!gr) return;
+  gr.addEventListener('mouseup', e => {
+    if (mode === 'connect' && drawingConn) {
+      e.stopPropagation();
+      finishConn(node, svgPoint(e));
+    }
+  });
+});
+
+// Plus indicator — start connection on mousedown (auto-activates connect mode)
+plusEl.addEventListener('mousedown', e => {
+  e.stopPropagation();
+  const node = plusEl._node, anchor = plusEl._anchor;
+  if (!node || !anchor) return;
+  setMode('connect');   // auto-enter connect mode; also calls hidePlus() + cancelConn()
+  drawingConn = { fromNode: node, fromAnchor: anchor };
+  connPreview.style.display = '';
+});
+
+// Global mousemove — connect preview + group preview + hover detection
+window.addEventListener('mousemove', e => {
+  // When actively drawing a connection: update preview line
+  if (mode === 'connect' && drawingConn) {
+    const pt = svgPoint(e);
+    // Find snap target — inside node OR near an anchor midpoint
+    let snapAnchor = null;
+    const target = (() => {
+      const h = hitTest(pt);
+      if (h && h.id !== drawingConn.fromNode.id) return h;
+      // Also snap if cursor is within SNAP_R SVG units of any side midpoint
+      const SNAP_R = 25;
+      let best = null, bestD = Infinity;
+      for (const node of allNodesList()) {
+        if (node.id === drawingConn.fromNode.id) continue;
+        for (const dir of ['N','S','E','W']) {
+          const a = getAnchorPos(node, dir);
+          const d = Math.hypot(a.x - pt.x, a.y - pt.y);
+          if (d < SNAP_R && d < bestD) { bestD = d; best = node; snapAnchor = a; }
+        }
+      }
+      return best;
+    })();
+
+    let ex = pt.x, ey = pt.y, eDir = null;
+    if (target) {
+      const ta = snapAnchor || nearestAnchorToPoint(target, drawingConn.fromAnchor);
+      ex = ta.x; ey = ta.y; eDir = ta.dir;
+      if (_connHighlight !== target.id) {
+        if (_connHighlight) {
+          const old = nodeEls[_connHighlight];
+          if (old) { const b = old.querySelector('.node-bg'); if (b) b.style.filter = ''; }
+        }
+        _connHighlight = target.id;
+        const nel = nodeEls[target.id];
+        if (nel) { const b = nel.querySelector('.node-bg'); if (b) b.style.filter = 'brightness(0.87)'; }
+      }
+    } else if (_connHighlight) {
+      const el = nodeEls[_connHighlight];
+      if (el) { const b = el.querySelector('.node-bg'); if (b) b.style.filter = ''; }
+      _connHighlight = null;
+    }
+
+    const fa = drawingConn.fromAnchor;
+    // When snapped to a definite target, show the obstacle-aware route so the
+    // preview matches what the finished arrow will look like.
+    const prevD = target
+      ? routedConnCurve(fa.x, fa.y, fa.dir, ex, ey, eDir, drawingConn.fromNode.id, target.id)
+      : connCurve(fa.x, fa.y, fa.dir, ex, ey, eDir);
+    connPreview.setAttribute('d', prevD);
+    return;
+  }
+
+  // Hover near border → show "+" after 600 ms (works in any mode except group, and not while drawing)
+  if (mode !== 'group' && !drawingConn) {
+    const pt = svgPoint(e);
+    let found = null;
+    for (const node of allNodesList()) {
+      if (node.type === 'goals_bg') continue;
+      if (distToBorder(node, pt) <= 18) { found = node; break; }
+    }
+    if (found) {
+      if (plusHoverNode !== found.id) {
+        clearTimeout(plusHoverTimer);
+        plusHoverNode = found.id;
+        const capturedNode = found;
+        plusHoverTimer = setTimeout(() => {
+          if (plusHoverNode === capturedNode.id) {
+            const pt2 = plusEl.ownerSVGElement
+              ? svgPoint({ clientX: _lastMx, clientY: _lastMy })
+              : null;
+            showPlus(capturedNode, nearestAnchorToPoint(capturedNode, pt2 || pt));
+          }
+        }, 600);
+      }
+    } else if (plusHoverNode) {
+      hidePlus();
+    }
+  }
+
+  if (mode === 'group' && drawingGroup) {
+    const pt = svgPoint(e);
+    const x = Math.min(drawingGroup.sx, pt.x);
+    const y = Math.min(drawingGroup.sy, pt.y);
+    const w = Math.abs(pt.x - drawingGroup.sx);
+    const h = Math.abs(pt.y - drawingGroup.sy);
+    const prev = drawingGroup.previewEl;
+    prev.setAttribute('x', x); prev.setAttribute('y', y);
+    prev.setAttribute('width', w); prev.setAttribute('height', h);
+  }
+});
+
+// Track last mouse position for the plus timer callback
+let _lastMx = 0, _lastMy = 0;
+window.addEventListener('mousemove', e => { _lastMx = e.clientX; _lastMy = e.clientY; });
+
+// Position where a dblclick-to-create was triggered (null = use center)
+let _dblClickPos = null;
+
+// svgWrap dblclick — exit group mode OR create bubble on background
+document.getElementById('svg-wrap').addEventListener('dblclick', e => {
+  if (mode === 'group') { cancelGroupDraw(); setMode('select'); return; }
+  if (mode !== 'select') return;
+  const pt = svgPoint(e);
+  if (hitTest(pt)) return;            // double-clicked a node — ignore
+  _dblClickPos = pt;
+  showAddNodeModal();
+});
+
+// svgWrap mousedown — start group rect draw
+document.getElementById('svg-wrap').addEventListener('mousedown', e => {
+  if (mode !== 'group') return;
+  const pt = svgPoint(e);
+  if (hitTest(pt)) return;
+  e.stopPropagation();
+  const prev = svgEl('rect', {
+    x: pt.x, y: pt.y, width: 0, height: 0,
+    rx: 18, ry: 18,
+    fill: 'rgba(120,140,220,0.08)', stroke: '#6070c0',
+    'stroke-width': '1.5', 'stroke-dasharray': '3 4',
+  });
+  prev.style.pointerEvents = 'none';
+  groupsLayerEl.appendChild(prev);
+  drawingGroup = { sx: pt.x, sy: pt.y, previewEl: prev };
+});
+
+// Global mouseup — finish connect or group
+window.addEventListener('mouseup', e => {
+  if (mode === 'connect' && drawingConn) {
+    const pt = svgPoint(e);
+    let target = hitTest(pt);
+    if (!target || target.id === drawingConn.fromNode.id) {
+      // Fall back: snap if released within SNAP_R of any anchor midpoint
+      const SNAP_R = 25;
+      let best = null, bestD = Infinity;
+      for (const node of allNodesList()) {
+        if (node.id === drawingConn.fromNode.id) continue;
+        for (const dir of ['N','S','E','W']) {
+          const a = getAnchorPos(node, dir);
+          const d = Math.hypot(a.x - pt.x, a.y - pt.y);
+          if (d < SNAP_R && d < bestD) { bestD = d; best = node; }
+        }
+      }
+      target = best;
+    }
+    if (target && target.id !== drawingConn.fromNode.id) finishConn(target, pt);
+    else { cancelConn(); setMode('select'); }
+    return;
+  }
+  if (mode === 'group' && drawingGroup) {
+    const pt = svgPoint(e);
+    const x = Math.min(drawingGroup.sx, pt.x);
+    const y = Math.min(drawingGroup.sy, pt.y);
+    const w = Math.abs(pt.x - drawingGroup.sx);
+    const h = Math.abs(pt.y - drawingGroup.sy);
+    const previewEl = drawingGroup.previewEl;
+    drawingGroup = null;
+    if (w > 60 && h > 40) {
+      pendingGroup = { x, y, w, h, previewEl };
+      document.getElementById('group-label-inp').value = '';
+      setGroupColor(0);
+      // Position modal at the upper-left corner of the drawn rectangle
+      const screenX = x * scale + tx;
+      const screenY = y * scale + ty;
+      const modal = document.getElementById('group-modal');
+      const vw = window.innerWidth, vh = window.innerHeight;
+      modal.style.left = Math.min(screenX, vw - 340) + 'px';
+      modal.style.top  = Math.min(screenY, vh - 220) + 'px';
+      modal.style.display = 'block';
+      setTimeout(() => document.getElementById('group-label-inp').focus(), 60);
+    } else {
+      previewEl.remove();
+    }
+  }
+});
+
+// ════════════════════════════════════════════════════
+// COLORBLIND MODE TOGGLE
+// ════════════════════════════════════════════════════
+
+function toggleCB() {
+  cbMode = !cbMode;
+  const btn = document.getElementById('btn-cb');
+  if (btn) btn.classList.toggle('active', cbMode);
+
+  if (cbMode) {
+    // Save and override user-type colors with CB-friendly palette
+    let _uIdx = 0;
+    Object.entries(USER_TYPES).forEach(([name, ut]) => {
+      _origUserColors[name] = ut.color;
+      ut.color = CB_USER_PALETTE[_uIdx % CB_USER_PALETTE.length];
+      _uIdx++;
+    });
+    // Save and override node-type styles
+    ['project', 'research', 'sub'].forEach(key => {
+      const s = NODE_STYLES[key], ov = CB_NODE_STYLE_OVERRIDES[key];
+      if (!s || !ov) return;
+      _origNodeStyleOverrides[key] = { fill: s.fill, stroke: s.stroke, textColor: s.textColor };
+      s.fill = ov.fill; s.stroke = ov.stroke; s.textColor = ov.textColor;
+    });
+  } else {
+    // Restore user-type colors
+    Object.entries(USER_TYPES).forEach(([name, ut]) => {
+      if (_origUserColors[name] !== undefined) { ut.color = _origUserColors[name]; delete _origUserColors[name]; }
+    });
+    // Restore node-type styles
+    ['project', 'research', 'sub'].forEach(key => {
+      const s = NODE_STYLES[key], orig = _origNodeStyleOverrides[key];
+      if (!s || !orig) return;
+      s.fill = orig.fill; s.stroke = orig.stroke; s.textColor = orig.textColor;
+      delete _origNodeStyleOverrides[key];
+    });
+  }
+
+  // Rebuild all nodes (updates dot shapes + node type colors + user bars)
+  allNodesList().forEach(n => rebuildNode(n));
+
+  // Update all three legend panels
+  _updateCBLegends();
+}
+
+function _updateCBLegends() {
+  // 1. Team Members legend — toggle colored leg-dot ↔ CB shape SVG
+  document.querySelectorAll('#legend .leg-row').forEach(row => {
+    const name = row.dataset.legendName;
+    if (!name) return;
+    const legDot = row.querySelector('.leg-dot');
+    let cbSvg    = row.querySelector('.leg-dot-cb');
+    if (cbMode) {
+      if (legDot) legDot.style.display = 'none';
+      if (!cbSvg) {
+        const shape = teammateShapeMap[name] || 'circle';
+        cbSvg = document.createElementNS(svgNS, 'svg');
+        cbSvg.setAttribute('width', '14');
+        cbSvg.setAttribute('height', '14');
+        cbSvg.style.flexShrink = '0';
+        cbSvg.classList.add('leg-dot-cb');
+        cbSvg.appendChild(makeCBDotShape(shape, 7, 7, 4, 'current', null));
+        const anchor = legDot ? legDot.nextSibling : row.firstChild;
+        row.insertBefore(cbSvg, anchor);
+      } else {
+        cbSvg.style.display = '';
+      }
+    } else {
+      if (legDot) legDot.style.display = '';
+      if (cbSvg)  cbSvg.style.display  = 'none';
+    }
+  });
+
+  // 2. Target Users legend — update ring background colors
+  document.querySelectorAll('#users-legend .user-row').forEach(row => {
+    const name = row.dataset.legendName;
+    const ut   = name ? USER_TYPES[name] : null;
+    if (!ut) return;
+    const ring = row.querySelector('.user-ring');
+    if (ring) ring.style.background = ut.color;
+  });
+
+  // 3. Node Types legend — update swatch fill + border
+  const _cbTypeKeyMap = { 'Current Project': 'project', 'Future Project': 'sub', 'Research Agenda': 'research', 'FCV Outcome': 'goal' };
+  document.querySelectorAll('#type-legend .type-row').forEach(row => {
+    const label   = row.dataset.legendName || row.textContent.trim();
+    const typeKey = _cbTypeKeyMap[label] || TYPE_LABEL_MAP[label];
+    if (!typeKey) return;
+    const s = NODE_STYLES[typeKey];
+    if (!s) return;
+    const swatch = row.querySelector('.type-swatch');
+    if (swatch) { swatch.style.background = s.fill; swatch.style.borderColor = s.stroke; }
+  });
+}
+
+// ════════════════════════════════════════════════════
+// KEYBOARD SHORTCUTS
+// ════════════════════════════════════════════════════
+
+document.addEventListener('keydown', e => {
+  const tag = document.activeElement ? document.activeElement.tagName : '';
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  if (e.key === 'Escape') {
+    if (mode === 'connect') setMode('select'); else cancelConn();
+    if (mode === 'group') setMode('select');
+    cancelGroupDraw(); cancelGroup(); hideAddNodeModal(); hideAddLegendModal();
+    clearMultiSel();
+    if (lassoActive) toggleLasso();
+  }
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (_menuConn) {
+      const conn = _menuConn;
+      const idx = userConnections.indexOf(conn);
+      if (idx !== -1) userConnections.splice(idx, 1);
+      if (conn._hitEl)      conn._hitEl.remove();
+      if (conn._glowEl)     { conn._glowEl.remove();     conn._glowEl     = null; }
+      if (conn._labelEl)    { conn._labelEl.remove();    conn._labelEl    = null; }
+      if (conn._labelHitEl) { conn._labelHitEl.remove(); conn._labelHitEl = null; }
+      if (conn._el)         conn._el.remove();
+      hideConnControls();
+      saveToSupabase();
+    }
+  }
+  if (e.key === 's' || e.key === 'S') setMode('select');
+  if (e.key === 'c' || e.key === 'C') setMode('connect');
+  if (e.key === 'g' || e.key === 'G') setMode('group');
+  if (e.key === 'l' || e.key === 'L') toggleLasso();
+  if (e.key === 'e' || e.key === 'E') {
+    const btn = document.getElementById('btn-export');
+    if (btn) btn.click();
+  }
+});
+
+document.getElementById('add-node-inp').addEventListener('keydown', e => {
+  if (e.key === 'Enter') confirmAddNode();
+});
+document.getElementById('add-legend-name').addEventListener('keydown', e => {
+  if (e.key === 'Enter') confirmAddLegendItem();
+});
+document.getElementById('group-label-inp').addEventListener('keydown', e => {
+  if (e.key === 'Enter') confirmGroup();
+});
+
+// ════════════════════════════════════════════════════
+// EXPORT
+// ════════════════════════════════════════════════════
+
+function toggleExportMenu(e) {
+  e.stopPropagation();
+  document.getElementById('export-menu').classList.toggle('open');
+}
+
+function hideExportMenu() {
+  document.getElementById('export-menu').classList.remove('open');
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('#btn-export') && !e.target.closest('#export-menu')) {
+    hideExportMenu();
+  }
+});
+
+async function exportMap(format) {
+  hideExportMenu();
+  const loading = document.getElementById('export-loading');
+  loading.style.display = 'block';
+
+  // HTML export: serialize the live document as a standalone file
+  if (format === 'html') {
+    loading.style.display = 'none'; // must be hidden before serializing or it bakes into the snapshot
+    const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+    const blob = new Blob([html], { type: 'text/html' });
+    const link = document.createElement('a');
+    link.download = 'fcv_analytics_mind_map.html';
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    URL.revokeObjectURL(link.href);
+    loading.style.display = 'none';
+    return;
+  }
+
+  // Hide chrome elements so only the map appears in the export
+  const hideIds = ['toolbar', 'hint', 'zoom-ctrl', 'panel'];
+  const savedVis = {};
+  hideIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { savedVis[id] = el.style.visibility; el.style.visibility = 'hidden'; }
+  });
+
+  try {
+    const target = document.getElementById('svg-wrap');
+    const canvas = await html2canvas(target, {
+      backgroundColor: '#f2ede6',
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      allowTaint: true,
+      width: target.offsetWidth,
+      height: target.offsetHeight,
+    });
+
+    loading.style.display = 'none';
+
+    if (format === 'pdf') {
+      const { jsPDF } = window.jspdf;
+      const w = canvas.width / 2;
+      const h = canvas.height / 2;
+      const orientation = w >= h ? 'l' : 'p';
+      const pdf = new jsPDF({ orientation, unit: 'px', format: [w, h], hotfixes: ['px_scaling'] });
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, w, h);
+      pdf.save('fcv_analytics_mind_map.pdf');
+    } else {
+      const mimeType = format === 'jpg' ? 'image/jpeg' : 'image/png';
+      const ext = format === 'jpg' ? 'jpg' : 'png';
+      const link = document.createElement('a');
+      link.download = 'fcv_analytics_mind_map.' + ext;
+      link.href = canvas.toDataURL(mimeType, 0.93);
+      link.click();
+    }
+  } catch (err) {
+    loading.style.display = 'none';
+    alert('Export failed: ' + err.message);
+  } finally {
+    hideIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.visibility = savedVis[id] || '';
+    });
+  }
+}
+
+// ════════════════════════════════════════════════════
+// ADMIN EDIT MODE
+// ════════════════════════════════════════════════════
+
+const ADMIN_PASSWORD = 'fcv2024';
+let adminMode = false;
+
+function toggleAdminMode() {
+  if (!adminMode) {
+    document.getElementById('admin-pw-inp').value = '';
+    document.getElementById('admin-pw-modal').style.display = 'block';
+    setTimeout(() => document.getElementById('admin-pw-inp').focus(), 60);
+  } else {
+    adminMode = false;
+    document.getElementById('btn-admin').classList.remove('active');
+    document.getElementById('admin-section').style.display = 'none';
+  }
+}
+
+function confirmAdminPw() {
+  const pw = document.getElementById('admin-pw-inp').value;
+  document.getElementById('admin-pw-modal').style.display = 'none';
+  if (pw === ADMIN_PASSWORD) {
+    adminMode = true;
+    document.getElementById('btn-admin').classList.add('active');
+    if (_selfAssignNode) populateAdminSection(_selfAssignNode);
+  } else {
+    alert('Incorrect password.');
+  }
+}
+
+function cancelAdminPw() {
+  document.getElementById('admin-pw-modal').style.display = 'none';
+}
+
+function populateAdminSection(node) {
+  if (!adminMode) return;
+  document.getElementById('admin-section').style.display = 'block';
+  const labelVal = Array.isArray(node.label) ? node.label.join('\n') : (node.label || '');
+  document.getElementById('admin-label').value       = labelVal;
+  document.getElementById('admin-w').value           = node.w || '';
+  document.getElementById('admin-h').value           = node.h || '';
+  document.getElementById('admin-fontSize').value    = node.fontSize || '';
+  document.getElementById('admin-type').value        = node.type || 'project';
+  document.getElementById('admin-hasTitle').value    = node.hasTitle ? 'true' : '';
+  document.getElementById('admin-bulletAlign').value = node.bulletAlign || '';
+  document.getElementById('admin-id').value          = node.id || '';
+}
+
+function adminApply() {
+  const node = _selfAssignNode;
+  if (!node || !adminMode) return;
+
+  // Label: multi-line textarea → array; single line → string
+  const rawLabel = document.getElementById('admin-label').value;
+  const lines = rawLabel.split('\n').filter((l, i, a) => !(l === '' && i === a.length - 1));
+  node.label = lines.length > 1 ? lines : rawLabel.trim();
+
+  // Dimensions
+  const newW = parseInt(document.getElementById('admin-w').value, 10);
+  const newH = parseInt(document.getElementById('admin-h').value, 10);
+  if (!isNaN(newW) && newW > 0) node.w = newW;
+  if (!isNaN(newH) && newH > 0) node.h = newH;
+
+  // Font size
+  const fsRaw = document.getElementById('admin-fontSize').value.trim();
+  if (fsRaw) node.fontSize = parseFloat(fsRaw);
+  else delete node.fontSize;
+
+  // Type
+  const newType = document.getElementById('admin-type').value;
+  if (newType) node.type = newType;
+
+  // hasTitle
+  if (document.getElementById('admin-hasTitle').value === 'true') node.hasTitle = true;
+  else delete node.hasTitle;
+
+  // bulletAlign
+  const baVal = document.getElementById('admin-bulletAlign').value;
+  if (baVal) node.bulletAlign = baVal;
+  else delete node.bulletAlign;
+
+  rebuildNode(node);
+  saveToSupabase();
+  populateAdminSection(node);
+}
+
+// ════════════════════════════════════════════════════
+// SUPABASE SYNC
+// ════════════════════════════════════════════════════
+
+const _SB_URL = '__SUPABASE_URL__';
+const _SB_KEY = '__SUPABASE_ANON_KEY__';
+
+let _saveTimer = null;
+
+// Serialise and upsert the full map state to Supabase (debounced 1.2 s).
+function saveToSupabase() {
+  if (!_SB_URL || !_SB_KEY) return;
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    const allNodes = allNodesList().map(n => ({
+      id:    n.id,
+      label: n.label,
+      x:     (pos[n.id] || n).x,
+      y:     (pos[n.id] || n).y,
+      type:  n.type,
+      w:     n.w,
+      h:     n.h,
+      people:         n.people         || [],
+      desc:           n.desc           || '',
+      users:          n.users          || [],
+      ...(n._user          ? { _user: true }                           : {}),
+      ...(n.hasTitle       ? { hasTitle: n.hasTitle }                  : {}),
+      ...(n.bulletAlign    ? { bulletAlign: n.bulletAlign }            : {}),
+      ...(n.fontSize       ? { fontSize: n.fontSize }                  : {}),
+      ...(n.lineAnnotations? { lineAnnotations: n.lineAnnotations }    : {}),
+    }));
+    const conns = userConnections.map(c => ({
+      id:      c.id,
+      fromId:  c.fromId,
+      toId:    c.toId,
+      fromDir: c.fromDir,
+      toDir:   c.toDir,
+      style:   c.style  || 'solid',
+      color:   c.color  || null,
+      label:   c.label  || null,
+    }));
+    fetch(`${_SB_URL}/rest/v1/mind_map_state`, {
+      method: 'POST',
+      headers: {
+        'apikey':        _SB_KEY,
+        'Authorization': `Bearer ${_SB_KEY}`,
+        'Content-Type':  'application/json',
+        'Prefer':        'resolution=merge-duplicates',
+      },
+      body: JSON.stringify({
+        id:              'main',
+        nodes:           allNodes,
+        edges:           EDGES,
+        user_connections: conns,
+        teammates:       TEAMMATES,
+        user_types:      USER_TYPES,
+        updated_at:      new Date().toISOString(),
+      }),
+    }).catch(err => console.warn('Supabase save failed:', err));
+  }, 1200);
+}
+
+// Restore user-drawn connections that were saved in a previous session.
+(function restoreUserConns() {
+  const saved = __USER_CONNS__;
+  if (!saved || !saved.length) return;
+  saved.forEach(c => {
+    if (!nMap[c.fromId] || !nMap[c.toId]) return;
+    const numPart = parseInt((c.id || '').replace('uc', ''), 10);
+    if (!isNaN(numPart) && numPart > userConnIdSeq) userConnIdSeq = numPart;
+    userConnections.push(c);
+    renderUserConn(c);
+  });
+})();
+
+</script>
+</body>
+</html>"""
+
+# ── Inject data into template ──────────────────────────────────────────────────
+MIND_MAP_HTML = (
+    MIND_MAP_HTML_TEMPLATE
+    .replace("__TEAMMATES__",        _TEAMMATES_JSON)
+    .replace("__USER_TYPES__",       _USER_TYPES_JSON)
+    .replace("__NODES__",            _NODES_JSON)
+    .replace("__EDGES__",            _EDGES_JSON)
+    .replace("__USER_CONNS__",       _USER_CONNS_JSON)
+    .replace("__SUPABASE_URL__",     _SUPABASE_URL)
+    .replace("__SUPABASE_ANON_KEY__", _SUPABASE_KEY)
+
+)
+
+components.html(MIND_MAP_HTML, height=890, scrolling=False)
