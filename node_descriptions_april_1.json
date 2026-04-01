@@ -1,0 +1,144 @@
+{
+  "scd": {
+    "label": "SCD — Strategic Country Diagnostic",
+    "desc": [
+      "The Strategic Country Diagnostic (SCD) is a comprehensive, evidence-based country analysis prepared by the World Bank Group. It identifies the most critical constraints and opportunities for reducing poverty and boosting shared prosperity, drawing on data, stakeholder consultations, and analytical work across sectors.",
+      "The SCD underpins the Country Partnership Framework by providing the analytical foundation for prioritizing areas of WBG engagement. It is typically updated every five years or when a new CPF is being prepared, and is publicly disclosed.",
+      "In FCV contexts, the SCD incorporates fragility, conflict, and violence (FCV) diagnostics to understand root causes of instability and how development interventions can strengthen resilience."
+    ]
+  },
+  "cpf": {
+    "label": "CPF — Country Partnership Framework",
+    "desc": [
+      "The Country Partnership Framework (CPF) is the primary multi-year strategic document guiding World Bank Group engagement in a country, typically spanning five years. It translates SCD findings into a focused set of high-level outcomes and defines the WBG's areas of engagement in alignment with the country's national development priorities.",
+      "The CPF is jointly prepared by IDA/IBRD, IFC, and MIGA, and reviewed annually through a Performance and Learning Review (PLR). At the end of the CPF period, a Completion and Learning Review (CLR) assesses results and lessons learned.",
+      "CPF outcomes are linked to Corporate Scorecard Indicators that enable systematic tracking and reporting at the corporate level. Each CPF typically includes 3–5 high-level outcomes."
+    ]
+  },
+  "abp": {
+    "label": "Annual Business Plan Review",
+    "desc": [
+      "The Annual Business Plan Review is a key adaptive management mechanism through which the WBG updates its planned portfolio of operations for the coming fiscal year. It ensures that the portfolio remains aligned with both the CPF strategic objectives and the evolving country context.",
+      "The review process confirms which projects, programs, and Advisory Services and Analytics (ASA) to prepare and deliver, setting priorities and sequencing based on country readiness, resource availability, and strategic relevance.",
+      "In fragile and conflict-affected states (FCS), the Annual Business Plan Review is especially critical, as country conditions can shift rapidly and require frequent portfolio adjustments to maintain relevance and effectiveness."
+    ]
+  },
+  "outcome": {
+    "label": "CPF Outcome",
+    "desc": [
+      "CPF Outcomes are the high-level results the WBG-country partnership aims to achieve over the CPF period. They define what success looks like and serve as the cornerstone of the CPF results framework.",
+      "Each outcome is linked to one or more Corporate Scorecard Indicators, enabling progress tracking at both the country and corporate levels. Outcomes span the WBG's focus areas — such as governance, private sector development, human capital, or infrastructure — and reflect the theory of change connecting WBG interventions to country-level development goals.",
+      "Progress toward outcomes is monitored annually through the PLR process. If country conditions shift significantly, the CPF can be restructured to adjust outcomes mid-period."
+    ]
+  },
+  "scorecard": {
+    "label": "Corporate Scorecard Indicators",
+    "desc": [
+      "Corporate Scorecard Indicators are standardized metrics defined at the WBG corporate level that link individual country CPF outcomes to the institution's global performance framework.",
+      "These indicators enable aggregation across countries, allowing the WBG to track and report on its development impact at a global scale. They are monitored annually and reported in the WBG's Corporate Scorecard, which is presented to the Board of Directors.",
+      "In FCV countries, specific FCV-sensitive indicators — such as progress on state capacity, social cohesion, or resilience — may be included to capture the nuanced nature of development outcomes in fragile settings."
+    ]
+  },
+  "pasa": {
+    "label": "PASA — Program-for-Results",
+    "desc": [
+      "The Program-for-Results (PforR) financing instrument — sometimes referred to as PASA — disburses WBG funds based on the achievement of defined program results and performance indicators rather than inputs or expenditures.",
+      "PforR supports government-owned programs and strengthens the systems through which governments deliver services. It is particularly effective for systems-level change where improving delivery mechanisms is as important as generating discrete outputs.",
+      "PforR operations include safeguards through an Integrated Risk Assessment and social and environmental systems assessments. They are used across sectors including education, health, agriculture, water, and public sector governance."
+    ]
+  },
+  "project": {
+    "label": "Project — Investment Project Financing",
+    "desc": [
+      "Investment Project Financing (IPF) operations are the WBG's primary lending instrument, providing funds for specific development objectives through financing goods, works, non-consulting and consulting services, and capacity building.",
+      "Projects under the CPF are designed to contribute directly to CPF outcomes and are tracked through individual results frameworks. Project financing ranges from small technical assistance grants to large infrastructure programs, spanning sectors including transport, energy, health, education, social protection, and urban development.",
+      "IPF projects are implemented over a defined period (typically 3–7 years) and supervised by WBG task teams who monitor progress, resolve implementation bottlenecks, and ensure fiduciary and safeguard compliance."
+    ]
+  },
+  "pipeline": {
+    "label": "Pipeline Operation",
+    "desc": [
+      "Pipeline operations are financing operations or Advisory Services and Analytics (ASA) that are in the preparation stage and planned for delivery in the next one to three fiscal years.",
+      "The pipeline is identified through the Annual Business Plan process and reflects the forward-looking portfolio strategy under the CPF. Pipeline operations are sequenced to build on lessons from existing operations, respond to emerging country needs, and align with government priorities and WBG corporate commitments.",
+      "In FCS countries, pipeline management requires flexibility — operations may be accelerated in response to crises or delayed due to security and political constraints. Scenario planning and contingency pipelines are often maintained to allow rapid response."
+    ]
+  },
+  "advisory": {
+    "label": "Advisory Services & Analytics (ASA)",
+    "desc": [
+      "Advisory Services and Analytics (ASA) encompass a broad range of non-lending knowledge and technical assistance activities that complement WBG lending operations. These include economic and sector work, technical assistance, capacity building, and data and analytics products.",
+      "ASA informs policy dialogue, shapes the design of the lending program, and supports government counterparts in building the institutional capacity needed to implement reforms and sustain development gains.",
+      "In FCS contexts, ASA often plays a critical upstream role — generating the analytical foundations for engagement in environments where large-scale lending may not yet be feasible. This includes conflict analysis, political economy assessments, and resilience diagnostics."
+    ]
+  },
+  "wbg": {
+    "label": "IDA-IBRD | IFC | MIGA",
+    "desc": [
+      "The World Bank Group (WBG) consists of five closely associated institutions that collectively work to reduce poverty and promote shared prosperity. In the context of the Country Engagement Cycle, three institutions are central:",
+      "IDA (International Development Association) and IBRD (International Bank for Reconstruction and Development) together form the World Bank. IDA provides grants and highly concessional loans to the world's poorest countries, while IBRD offers loans and development assistance to middle-income and creditworthy lower-income countries.",
+      "IFC (International Finance Corporation) is the largest global development institution focused exclusively on the private sector, providing investment, advice, and asset management services to encourage private enterprise in developing countries.",
+      "MIGA (Multilateral Investment Guarantee Agency) promotes foreign direct investment by providing political risk insurance and credit enhancement guarantees to investors and lenders in developing countries."
+    ]
+  },
+  "rra": {
+    "label": "RRA — Risk and Resilience Assessment",
+    "desc": [
+      "The Risk and Resilience Assessment (RRA) is a core diagnostic tool used in FCV country engagement. It provides a systematic analysis of the drivers of fragility and conflict, the sources of resilience, and the pathways through which WBG operations can support stabilization and recovery.",
+      "The RRA identifies the main FCV-related risks that need to be addressed or managed throughout the CPF cycle — including risks related to governance, security, social cohesion, and economic fragility. These risks inform the design of CPF outcomes, the selection of operations, and the approach to implementation.",
+      "RRAs are produced jointly by the World Bank and IFC, often in collaboration with the UN and other partners. They are updated during the CPF period — particularly at the PLR stage — to reflect changing country conditions. In slide 17, this update process is shown as a direct input into the Annual Business Plan Review (difference #6)."
+    ]
+  },
+  "fcve": {
+    "label": "IDA FCVE / WHR / PSW",
+    "desc": [
+      "FCS countries have access to specialized IDA financing windows designed to address the unique challenges of fragility, conflict, and violence:",
+      "<strong>FCVE — FCV Envelope:</strong> A dedicated IDA envelope that provides additional grant financing for countries experiencing fragility or conflict. The FCVE is structured around country-specific eligibility criteria related to fragility, governance, and portfolio performance.",
+      "<strong>WHR — Window for Host Communities and Refugees:</strong> Provides IDA grants to countries hosting large numbers of refugees, to finance investments in host communities and support refugees' access to services.",
+      "<strong>PSW — Private Sector Window:</strong> Mobilizes IFC and MIGA financing in IDA countries (including FCS) by providing risk mitigation instruments and blended finance tools that crowd in private sector investment in otherwise high-risk environments.",
+      "These windows provide additionality on top of regular country IDA allocations, allowing FCS countries to access more resources and tailored support than would otherwise be available."
+    ]
+  },
+  "rra_updates": {
+    "label": "RRA Updates → Annual Business Plan Review",
+    "desc": [
+      "In FCV contexts, the Annual Business Plan Review is directly informed by periodic updates to the Risk and Resilience Assessment (RRA). This feedback loop — shown as difference #6 in the slide — reflects the heightened need for adaptive management in fragile and conflict-affected settings.",
+      "Country conditions in FCS environments can change rapidly and unpredictably. Security deterioration, political transitions, humanitarian crises, or economic shocks may require rapid portfolio adjustments. RRA updates ensure that the evolving FCV risk landscape is systematically integrated into the business planning process.",
+      "Practically, this means the Business Plan Review in FCS countries includes a structured review of: updated FCV risk ratings, emerging drivers of conflict or resilience, portfolio performance in light of security and access constraints, and any necessary adjustments to sequencing, supervision modalities, or fiduciary arrangements."
+    ]
+  },
+  "callout1": {
+    "label": "①: FCV Risk Identification",
+    "desc": [
+      "In FCV contexts, the identification phase includes a Risk and Resilience Assessment (RRA) that explicitly identifies the main FCV-related risks the WBG engagement must navigate and address.",
+      "The RRA complements the SCD by providing a conflict-sensitive lens: while the SCD focuses on binding constraints to development, the RRA focuses on the drivers of fragility and violence, the structural fault lines that may affect program delivery, and the opportunities to strengthen resilience.",
+      "This FCV-specific diagnostic ensures that the CPF is designed with a realistic understanding of the operating environment — not just the development agenda — and that risks to implementation (such as security constraints, limited government capacity, or political instability) are explicitly factored into strategic decisions."
+    ]
+  },
+  "callout2": {
+    "label": "②: FCV-Responsive Outcomes & Projects",
+    "desc": [
+      "In FCS country CPFs, at least some outcomes and projects should be explicitly <strong>FCV-responsive</strong> — meaning they are designed to contribute to lowering FCV risks, not just achieve sectoral development goals.",
+      "FCV-responsive outcomes may address root causes of conflict (such as exclusion, inequality, or weak institutions), build state legitimacy, support social cohesion, or strengthen community resilience. Sectoral projects can also be FCV-responsive if their design explicitly reduces drivers of fragility — for example, a jobs program that targets at-risk youth, or a governance reform that improves accountability and service delivery.",
+      "This distinction matters because in fragile settings, development projects can inadvertently worsen conflict dynamics if they benefit some groups but not others, reinforce patronage systems, or disrupt local power balances. FCV-responsive design requires a political economy and conflict sensitivity analysis that goes beyond standard socioeconomic assessments.",
+      "CPFs in FCS countries are typically expected to include at least one FCV-responsive outcome, and a significant share of the lending portfolio should be designed with explicit FCV-responsiveness criteria."
+    ]
+  },
+  "callout4": {
+    "label": "④: FCV-Sensitive Projects",
+    "desc": [
+      "All WBG projects in FCS countries should be <strong>FCV-sensitive</strong> — meaning they are designed and supervised to mitigate FCV risks during implementation and ensure they do not inadvertently increase those risks.",
+      "FCV sensitivity is a baseline requirement: even projects that are not explicitly designed to address conflict (such as infrastructure or health projects) must be delivered in a way that is conflict-aware. This includes conflict-sensitive procurement, inclusive beneficiary selection, community engagement that avoids reinforcing grievances, and monitoring for unintended effects on social cohesion.",
+      "Key requirements for FCV-sensitive projects include: Do No Harm assessments, context-sensitive safeguards implementation, adaptive supervision modalities (including remote monitoring in insecure areas), strong accountability mechanisms, and regular check-ins with implementing partners on the evolving security situation.",
+      "The dashed border around the implementation zone in the diagram highlights that ALL operations in this category — projects, pipelines, PASA, and advisory services — must meet FCV-sensitivity standards."
+    ]
+  },
+  "callout5": {
+    "label": "⑤: Enhanced Monitoring & Security Requirements",
+    "desc": [
+      "FCS country engagement requires significantly enhanced monitoring, risk management, and security protocols throughout the implementation phase:",
+      "<strong>FCV-risk monitoring:</strong> Regular (often quarterly) monitoring of the FCV risk landscape using indicators from the RRA, conflict tracking databases (such as ACLED), and local intelligence networks. Changes in risk levels trigger review of project activities and supervision strategies.",
+      "<strong>Remote monitoring:</strong> When direct access to project sites is restricted due to security, the WBG relies on third-party monitoring agents, satellite imagery, community-based monitoring, beneficiary feedback mechanisms, and digital data collection tools to verify project delivery and assess outcomes.",
+      "<strong>Security management protocols:</strong> All WBG staff and consultants operating in FCS environments must comply with security management protocols, including regular security briefings, restricted travel guidelines, emergency evacuation procedures, and coordination with the UN Department of Safety and Security (UNDSS). Project designs must budget for security costs, which can be significant."
+    ]
+  }
+}

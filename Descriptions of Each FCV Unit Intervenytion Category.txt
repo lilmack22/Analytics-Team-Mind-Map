@@ -1,0 +1,28 @@
+Bubble/Category 1: 
+Title: RRA
+Description: Identifies the main FCV-related risks.
+Input into: SCD
+
+Bubble/Category 2: 
+Title: FCV-Responsive Programming
+Description: At least *some* outcomes and projects contribute to lowering FCV risk.
+Input into: CPF Outcomes
+
+Bubble/Category 3: 
+Title: IDA Financing for FCS
+Description: IDA FCVE/WHR/PSW
+Input into: CPF (?)
+
+Bubble/Category 4: 
+Title: FCV-Sensitive Programming
+Description: Projects do not increase FCV risks; mitigate these risks during implementation
+Input into: PASA, Active projects, Advisory services, Projects in the pipeline
+
+Bubble/Category 5: 
+Title: Implementation and Adaptive Tactical Management
+Description: Improved ongoing FCV-risk monitoring, remote monitoring, security management protocols
+Input into: Ongoing implementation support, operational troubleshooting,
+
+Bubble/Category 6: 
+Title: RRA Updates
+Input into: Annual Business Plan Review

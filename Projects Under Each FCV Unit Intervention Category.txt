@@ -1,0 +1,38 @@
+Category 1 — RRA added at identification (identifies FCV risks):
+
+RRA 2.0
+Political Economy Analysis Scenarios
+Knowledge Packages (KP's); K360
+
+Category 2 — FCV-responsive outcomes & projects:
+
+Hoover Model
+Risk Scans
+Conflict Intelligence
+Corporate Security Inputs
+LLMs (FCV Sensitive / Responsive)
+LLMs and KPs ("Socratic Agent")
+Knowledge Packages (KP's); K360
+Action Labs
+Research (Assessing Commitment, Trajectory-Shifting Reforms, Prevention Paper)
+Gaza Reconstruction
+
+Category 3 — IDA financing for FCS:
+
+FCV Schema
+
+Category 4 — All projects FCV-sensitive (mitigate/not increase risks):
+
+Geospatial Planning / Adaptation
+DPF/RRA Geospatial
+LLMs (FCV Sensitive / Responsive)
+
+Category 5 — Enhanced implementation support (monitoring, remote, security):
+
+Geo Data Hubs
+Risk Monitor
+Integrated Planning – National / Intl. Actors
+Corporate Security Inputs
+
+Category 6 — RRA updates feed into planning:
+

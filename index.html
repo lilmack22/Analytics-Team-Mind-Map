@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FCV Analytics Team Projects</title>
 <style>
+  :root { --sb-w: 130px; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -118,7 +119,7 @@
 
   /* ── Legend container ── */
   #legend-container {
-    position: fixed; bottom: 22px; left: 22px;
+    position: fixed; bottom: 22px; left: calc(var(--sb-w) + 22px);
     display: flex; flex-direction: row; align-items: flex-end; gap: 12px;
     z-index: 200;
     pointer-events: none;
@@ -239,7 +240,7 @@
 
   /* ── Toolbar ── */
   #toolbar {
-    position: fixed; top: 18px; left: 22px;
+    position: fixed; top: 18px; left: calc(var(--sb-w) + 22px);
     display: flex; align-items: center; gap: 6px;
     background: rgba(255,255,255,0.96);
     border-radius: 12px; padding: 8px 12px;
@@ -482,7 +483,7 @@
 
   /* ── Export dropdown ── */
   #export-menu {
-    position: fixed; top: 62px; left: 22px;
+    position: fixed; top: 62px; left: calc(var(--sb-w) + 22px);
     background: rgba(255,255,255,0.98);
     border-radius: 10px; padding: 6px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.14);
@@ -508,6 +509,65 @@
     z-index: 9999; font-size: 15px; font-weight: 600;
     color: #374151; display: none;
   }
+
+  /* ── Tab sidebar ── */
+  #tab-sidebar {
+    position: fixed; left: 0; top: 0;
+    width: var(--sb-w); height: 100vh;
+    background: rgba(255,255,255,0.97);
+    box-shadow: 2px 0 16px rgba(0,0,0,0.08);
+    backdrop-filter: blur(6px);
+    z-index: 220; display: flex; flex-direction: column;
+    padding: 14px 0 12px; border-right: 1px solid #e8eaf0;
+  }
+  #tab-sidebar-label {
+    font-size: 9.5px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.12em; color: #b0b7c3;
+    padding: 0 14px 10px;
+    border-bottom: 1px solid #f0f2f8; margin-bottom: 8px;
+  }
+  #tab-list {
+    flex: 1; overflow-y: auto; padding: 0 8px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .tab-btn {
+    width: 100%; padding: 9px 10px;
+    border-radius: 8px; border: 1.5px solid transparent;
+    background: none; cursor: pointer;
+    font-size: 11.5px; font-weight: 600; color: #555;
+    text-align: left; font-family: inherit; transition: all 0.15s;
+    display: flex; align-items: center;
+  }
+  .tab-btn:hover { background: #f0f3fc; color: #374151; }
+  .tab-btn.active { background: #e8eeff; border-color: #7b8cbc; color: #3a4fa0; }
+  .tab-btn-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tab-btn-del {
+    margin-left: 4px; flex-shrink: 0; font-size: 10px; color: transparent;
+    cursor: pointer; line-height: 1; border-radius: 3px;
+    padding: 1px 3px; border: none; background: none; transition: color 0.15s;
+  }
+  .tab-btn:hover .tab-btn-del { color: #ccc; }
+  .tab-btn-del:hover { color: #e53935 !important; }
+  #tab-add-btn {
+    margin: 8px; padding: 7px; border-radius: 8px;
+    border: 1.5px dashed #d1d5e0; background: none; cursor: pointer;
+    font-size: 11px; font-weight: 600; color: #9ca3af;
+    font-family: inherit; transition: all 0.15s; text-align: center;
+  }
+  #tab-add-btn:hover { background: #f0f3fc; color: #374151; border-color: #b0b7c3; }
+  #sb-drag-handle {
+    position: absolute; top: 0; right: -4px;
+    width: 8px; height: 100%;
+    cursor: ew-resize; z-index: 221;
+  }
+  #sb-drag-handle::after {
+    content: ''; position: absolute;
+    top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 2px; height: 40px; border-radius: 2px;
+    background: #d1d5e0; transition: background 0.15s;
+  }
+  #sb-drag-handle:hover::after,
+  body.sb-resizing #sb-drag-handle::after { background: #7b8cbc; }
 
   /* ── Admin edit mode ── */
   #btn-admin.active { background: #fde8e8; border-color: #e07070; color: #b02020; }
@@ -548,11 +608,373 @@
   }
   #admin-apply-btn:hover { background: #8b1010; }
   #admin-id-field input { background: #f5f5f5 !important; color: #999; cursor: default; }
+
+  /* ── Country Engagement Cycle overlay ── */
+  #ce-overlay {
+    display: none;
+    position: fixed; inset: 0; z-index: 450;
+    background: linear-gradient(145deg, #f0f4fa 0%, #eaeff8 50%, #f2f6fb 100%);
+    flex-direction: column;
+  }
+  #ce-overlay.open { display: flex; }
+
+  #ce-header {
+    padding: 14px 20px 12px 22px;
+    border-bottom: 1px solid #dde3f0;
+    background: rgba(255,255,255,0.94);
+    display: flex; align-items: center; gap: 14px;
+    flex-shrink: 0; backdrop-filter: blur(6px);
+  }
+  #ce-header h2 {
+    font-size: 16px; font-weight: 700; color: #111827; flex: 1;
+    letter-spacing: -0.01em;
+  }
+  #ce-header .ce-subtitle {
+    font-size: 12px; color: #9ca3af; font-weight: 500; margin-left: 2px;
+  }
+  #ce-close-btn {
+    background: #f0f2f7; border: none; border-radius: 8px;
+    padding: 7px 14px; cursor: pointer; font-size: 12px;
+    font-weight: 600; color: #374151; font-family: inherit;
+    transition: background 0.15s; flex-shrink: 0;
+  }
+  #ce-close-btn:hover { background: #e0e4ef; }
+
+  #ce-body {
+    flex: 1; overflow: hidden; display: flex;
+    position: relative;
+  }
+  #ce-svg-wrap { flex: 1; overflow: hidden; }
+  #ce-svg-wrap svg { width: 100%; height: 100%; }
+
+  .ce-node { cursor: pointer; }
+  .ce-node .ce-bg { transition: filter 0.18s; }
+  .ce-node:hover .ce-bg {
+    filter: brightness(0.88) drop-shadow(0 3px 10px rgba(0,0,0,0.22));
+  }
+  .ce-ellipse-node { cursor: pointer; }
+  .ce-ellipse-node ellipse { transition: filter 0.18s; }
+  .ce-ellipse-node:hover ellipse {
+    filter: brightness(0.88) drop-shadow(0 3px 8px rgba(0,0,0,0.2));
+  }
+  .ce-text-node { cursor: pointer; }
+  .ce-text-node text { transition: opacity 0.18s; }
+  .ce-text-node:hover text { opacity: 0.65; }
+
+  /* CE detail panel */
+  #ce-detail-panel {
+    position: absolute; top: 0; right: -380px;
+    width: 360px; height: 100%;
+    background: #fff;
+    box-shadow: -6px 0 32px rgba(0,0,0,0.12);
+    transition: right 0.32s cubic-bezier(0.4,0,0.2,1);
+    z-index: 460; display: flex; flex-direction: column; overflow: hidden;
+  }
+  #ce-detail-panel.open { right: 0; }
+  #ce-panel-header {
+    padding: 24px 22px 16px;
+    border-bottom: 1px solid #f0f0f0;
+    background: linear-gradient(135deg, #f8faff 0%, #fff 100%);
+    position: relative; flex-shrink: 0;
+  }
+  #ce-panel-close {
+    position: absolute; top: 14px; right: 14px;
+    background: #f0f2f7; border: none; border-radius: 50%;
+    width: 30px; height: 30px; font-size: 14px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: #555; transition: background 0.2s;
+  }
+  #ce-panel-close:hover { background: #e0e4ef; }
+  #ce-panel-type {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.1em; color: #7b8cbc;
+    background: #f0f3fc; border-radius: 5px;
+    padding: 2px 8px; margin-bottom: 9px; display: inline-block;
+  }
+  #ce-panel-title {
+    font-size: 19px; font-weight: 700; color: #111827; line-height: 1.3;
+  }
+  #ce-panel-body {
+    padding: 18px 22px; flex: 1; overflow-y: auto;
+    font-size: 13.5px; line-height: 1.82; color: #374151;
+  }
+  #ce-panel-body p { margin-bottom: 12px; }
+  #ce-panel-body p:last-child { margin-bottom: 0; }
+  #ce-panel-phase {
+    margin-top: 18px; padding: 10px 14px;
+    background: #f8faff; border-radius: 8px;
+    border-left: 3px solid #7b8cbc;
+    font-size: 12px; color: #555;
+  }
+  #ce-panel-phase strong { color: #3a4fa0; display: block; margin-bottom: 2px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; }
+
+  /* Sidebar CE Cycle button */
+  .sidebar-section-divider {
+    height: 1px; background: #e8eaf0; margin: 8px 8px 8px;
+  }
+  #ce-cycle-btn {
+    margin: 0 8px 8px;
+    padding: 9px 10px; border-radius: 8px;
+    border: 1.5px solid transparent;
+    background: none; cursor: pointer;
+    font-size: 11px; font-weight: 600; color: #5f6b85;
+    text-align: left; font-family: inherit;
+    transition: all 0.15s; display: flex; align-items: center; gap: 6px;
+    width: calc(100% - 16px);
+  }
+  #ce-cycle-btn:hover { background: #f0f3fc; color: #374151; }
+  #ce-cycle-btn.active { background: #e8eeff; border-color: #7b8cbc; color: #3a4fa0; }
+  #ce-cycle-btn .ce-btn-icon { font-size: 13px; flex-shrink: 0; }
+
+  /* ── CE17 sidebar button ── */
+  #ce17-cycle-btn {
+    margin: 0 8px 8px;
+    padding: 9px 10px; border-radius: 8px;
+    border: 1.5px solid transparent;
+    background: none; cursor: pointer;
+    font-size: 11px; font-weight: 600; color: #5f6b85;
+    text-align: left; font-family: inherit;
+    transition: all 0.15s; display: flex; align-items: center; gap: 6px;
+    width: calc(100% - 16px);
+  }
+  #ce17-cycle-btn:hover { background: #f0f3fc; color: #374151; }
+  #ce17-cycle-btn.active { background: #e8eeff; border-color: #7b8cbc; color: #3a4fa0; }
+
+  /* ── CE17 overlay ── */
+  #ce17-overlay {
+    display: none; position: fixed; inset: 0; z-index: 450;
+    background: linear-gradient(145deg, #f0f4fa 0%, #eaeff8 50%, #f2f6fb 100%);
+    flex-direction: column;
+  }
+  #ce17-overlay.open { display: flex; }
+  #ce17-header {
+    padding: 14px 20px 12px 22px;
+    border-bottom: 1px solid #dde3f0;
+    background: rgba(255,255,255,0.94);
+    display: flex; align-items: center; gap: 14px;
+    flex-shrink: 0; backdrop-filter: blur(6px);
+  }
+  #ce17-header h2 {
+    font-size: 15px; font-weight: 700; color: #111827; flex: 1;
+    letter-spacing: -0.01em;
+  }
+  #ce17-close-btn {
+    background: #f0f2f7; border: none; border-radius: 8px;
+    padding: 7px 14px; cursor: pointer; font-size: 12px;
+    font-weight: 600; color: #374151; font-family: inherit;
+    transition: background 0.15s; flex-shrink: 0;
+  }
+  #ce17-close-btn:hover { background: #e0e4ef; }
+  #ce17-body {
+    flex: 1; overflow: hidden; display: flex;
+    position: relative;
+  }
+  #ce17-svg-wrap { flex: 1; overflow: hidden; }
+  #ce17-svg-wrap svg { width: 100%; height: 100%; }
+
+  /* ── CE17 detail panel (fixed, body-level) ── */
+  #ce17-detail-panel {
+    position: fixed; top: 0; right: -385px;
+    width: 365px; height: 100vh;
+    background: #fff;
+    box-shadow: -6px 0 32px rgba(0,0,0,0.12);
+    transition: right 0.32s cubic-bezier(0.4,0,0.2,1);
+    z-index: 465; display: flex; flex-direction: column; overflow: hidden;
+  }
+  #ce17-detail-panel.open { right: 0; }
+  #ce17-panel-header {
+    padding: 24px 22px 16px;
+    border-bottom: 1px solid #f0f0f0;
+    background: linear-gradient(135deg, #f8faff 0%, #fff 100%);
+    position: relative; flex-shrink: 0;
+  }
+  #ce17-panel-close {
+    position: absolute; top: 14px; right: 14px;
+    background: #f0f2f7; border: none; border-radius: 50%;
+    width: 30px; height: 30px; font-size: 14px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: #555; transition: background 0.2s;
+  }
+  #ce17-panel-close:hover { background: #e0e4ef; }
+  #ce17-panel-type {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.1em; color: #1e4a8a;
+    background: #ebf3fc; border-radius: 5px;
+    padding: 2px 8px; margin-bottom: 9px; display: inline-block;
+  }
+  #ce17-panel-title {
+    font-size: 18px; font-weight: 700; color: #111827; line-height: 1.3;
+    border-radius: 4px; padding: 2px 4px; margin: 0 -4px;
+    outline: none; cursor: text;
+  }
+  #ce17-panel-title:hover { background: #f0f3fc; }
+  #ce17-panel-title:focus { background: #f0f3fc; box-shadow: 0 0 0 2px #90CAF9; }
+  #ce17-panel-body {
+    padding: 18px 22px; flex: 1; overflow-y: auto;
+    font-size: 13.5px; line-height: 1.82; color: #374151;
+  }
+  #ce17-panel-body p { margin-bottom: 12px; }
+  #ce17-panel-body p:last-child { margin-bottom: 0; }
+  #ce17-panel-body ul { padding-left: 18px; margin-bottom: 12px; }
+
+  /* ── CE overlay toolbar ── */
+  .ce-toolbar { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+  .ce-tbtn {
+    height: 30px; padding: 0 12px;
+    background: rgba(255,255,255,0.85);
+    border: 1.5px solid #d1d9e8; border-radius: 8px;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+    color: #374151; transition: all 0.15s; font-family: inherit;
+    display: flex; align-items: center; gap: 5px; white-space: nowrap;
+  }
+  .ce-tbtn:hover { background: #f0f3fc; border-color: #b0b7c3; }
+  .ce-tbtn.active { background: #e8eeff; border-color: #7b8cbc; color: #3a4fa0; }
+
+  /* ── CE add-node modal ── */
+  #ce-add-modal {
+    display: none; position: fixed; inset: 0; z-index: 700;
+    align-items: center; justify-content: center;
+    background: rgba(30,40,60,0.35); backdrop-filter: blur(3px);
+  }
+  #ce-add-modal.open { display: flex; }
+  #ce-add-modal-box {
+    background: #fff; border-radius: 14px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.22);
+    padding: 28px 32px; width: 340px;
+  }
+  #ce-add-modal-box h3 { font-size: 16px; font-weight: 700; color: #111827; margin-bottom: 16px; }
+  #ce-add-modal-inp {
+    width: 100%; padding: 9px 12px;
+    border: 1.5px solid #d1d9e8; border-radius: 8px;
+    font-size: 14px; font-family: inherit; color: #111827;
+    outline: none; margin-bottom: 14px;
+    transition: border-color 0.15s; display: block;
+  }
+  #ce-add-modal-inp:focus { border-color: #7b8cbc; }
+  .ce-modal-btns { display: flex; gap: 10px; justify-content: flex-end; }
+  .ce-modal-btn {
+    padding: 8px 18px; border-radius: 8px; border: none;
+    font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+  }
+  .ce-modal-btn.primary { background: #3a4fa0; color: #fff; }
+  .ce-modal-btn.primary:hover { background: #2d3d80; }
+  .ce-modal-btn.cancel { background: #f0f2f7; color: #374151; }
+  .ce-modal-btn.cancel:hover { background: #e0e4ef; }
+
+  /* ── CE user-created nodes ── */
+  .ce-user-node { cursor: grab; }
+  .ce-user-node rect, .ce-user-node ellipse { transition: filter 0.15s; }
+  .ce-user-node:hover rect, .ce-user-node:hover ellipse {
+    filter: brightness(0.93) drop-shadow(0 2px 8px rgba(0,0,0,0.15));
+  }
+
+  /* ── CE shape picker ── */
+  .ce-shape-row { display: flex; gap: 10px; margin-bottom: 16px; }
+  .ce-shape-opt {
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px;
+    cursor: pointer; padding: 8px 4px; border-radius: 8px;
+    border: 2px solid #e0e4ef; background: #f8faff;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .ce-shape-opt:hover { border-color: #b0b7c3; background: #f0f3fc; }
+  .ce-shape-opt.selected { border-color: #7b8cbc; background: #e8eeff; }
+  .ce-shape-opt svg { display: block; }
+  .ce-shape-opt span { font-size: 10px; font-weight: 600; color: #5f6b85; letter-spacing: 0.03em; }
+  .ce-shape-opt.selected span { color: #3a4fa0; }
+  #ce17-panel-body li { margin-bottom: 6px; }
+  #ce17-panel-phase {
+    margin-top: 18px; padding: 10px 14px;
+    background: #f0f5ff; border-radius: 8px;
+    border-left: 3px solid #1e4a8a;
+    font-size: 12px; color: #374151;
+  }
+  #ce17-panel-phase strong {
+    color: #1e4a8a; display: block; margin-bottom: 2px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em;
+  }
+  /* ── CE17 back button ── */
+  #ce17-panel-back {
+    display: none; background: none; border: none; cursor: pointer;
+    color: #1e4a8a; font-size: 12px; font-weight: 600;
+    padding: 0 0 10px; font-family: inherit; text-align: left;
+    flex-shrink: 0;
+  }
+  #ce17-panel-back:hover { text-decoration: underline; }
+  /* ── CE17 project cards ── */
+  .ce17-projects-section { margin-top: 20px; border-top: 1px solid #e8eaf0; padding-top: 16px; }
+  .ce17-projects-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.1em; color: #6b7280; margin-bottom: 10px;
+  }
+  .ce17-proj-card {
+    background: #f8f9fc; border: 1px solid #e2e6f0; border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 8px; cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .ce17-proj-card:hover { background: #eef1fb; border-color: #b0bbdd; }
+  .ce17-proj-title { font-size: 13px; font-weight: 600; color: #1e293b; margin-bottom: 6px; }
+  .ce17-proj-people { display: flex; flex-wrap: wrap; gap: 5px; }
+  .ce17-proj-badge {
+    font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px;
+    border: 1px solid; display: inline-flex; align-items: center; gap: 4px;
+  }
+  .ce17-proj-badge-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  /* ── CE17 project detail ── */
+  .ce17-proj-detail-desc { font-size: 13.5px; line-height: 1.82; color: #374151; }
+  .ce17-proj-detail-section { margin-top: 14px; }
+  .ce17-proj-detail-section-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.1em; color: #6b7280; margin-bottom: 7px;
+  }
+  .ce17-proj-detail-badges { display: flex; flex-wrap: wrap; gap: 5px; }
+  /* ── CE overlay zoom buttons ── */
+  .ce-zoom-controls {
+    display: flex; gap: 4px; align-items: center; flex-shrink: 0;
+  }
+  .ce-zbtn {
+    width: 30px; height: 30px;
+    background: rgba(255,255,255,0.85);
+    border: 1.5px solid #d1d9e8; border-radius: 8px;
+    font-size: 17px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: #374151; transition: all 0.15s; flex-shrink: 0;
+    font-family: inherit; line-height: 1;
+  }
+  .ce-zbtn:hover { background: #f0f3fc; border-color: #b0b7c3; }
+  .ce-zbtn.reset { font-size: 14px; }
+
+  .ce17-fcv-badge {
+    display: inline-block; background: #1e4a8a; color: white;
+    font-size: 10px; font-weight: 700; border-radius: 50%;
+    width: 18px; height: 18px; line-height: 18px; text-align: center;
+    margin-right: 6px; flex-shrink: 0;
+  }
+  #ce17-panel-body .fcv-tag {
+    display: inline-block; background: #1e4a8a; color: white;
+    font-size: 11px; font-weight: 700; border-radius: 4px;
+    padding: 1px 7px; margin-bottom: 6px;
+  }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
+
+<div id="tab-sidebar">
+  <div id="sb-drag-handle"></div>
+  <div id="tab-sidebar-label">Views</div>
+  <div id="tab-list"></div>
+  <button id="tab-add-btn" onclick="addTab()">+ New View</button>
+  <div class="sidebar-section-divider"></div>
+  <button id="ce-cycle-btn" onclick="openCECycle()">
+    <span class="ce-btn-icon">&#9654;</span>
+    <span>CE Cycle</span>
+  </button>
+  <button id="ce17-cycle-btn" onclick="openCE17Cycle()">
+    <span class="ce-btn-icon">&#9654;</span>
+    <span>CE Cycle – FCV</span>
+  </button>
+</div>
 
 <div id="hint">Click a bubble for details &nbsp;·&nbsp; Scroll to zoom &nbsp;·&nbsp; Drag to pan</div>
 
@@ -575,6 +997,736 @@
     </defs>
     <g id="g"></g>
   </svg>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     Country Engagement Cycle Overlay
+     ══════════════════════════════════════════════════════════════════ -->
+<div id="ce-overlay">
+  <div id="ce-header">
+    <h2>The Country Engagement Cycle <span class="ce-subtitle">(new CE process)</span></h2>
+    <div class="ce-zoom-controls">
+      <button class="ce-zbtn" onclick="cePZ.zoomIn()" title="Zoom in">+</button>
+      <button class="ce-zbtn" onclick="cePZ.zoomOut()" title="Zoom out">&#8722;</button>
+      <button class="ce-zbtn reset" onclick="cePZ.reset()" title="Reset view">&#8635;</button>
+    </div>
+    <div class="ce-toolbar">
+      <button class="ce-tbtn" id="ce-addnode-btn" onclick="showCEAddNodeModal('ce')">+ Node</button>
+    </div>
+    <button id="ce-close-btn" onclick="closeCECycle()">&#8592; Back to Map</button>
+  </div>
+  <div id="ce-body">
+    <div id="ce-svg-wrap">
+      <svg id="ce-svg" viewBox="0 0 960 510" xmlns="http://www.w3.org/2000/svg"
+           preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <!-- Arrow markers -->
+          <marker id="ce-arr" markerWidth="9" markerHeight="7" refX="0" refY="3.5" orient="auto">
+            <polygon points="0 0, 9 3.5, 0 7" fill="#6b7280"/>
+          </marker>
+          <marker id="ce-arr-dark" markerWidth="9" markerHeight="7" refX="0" refY="3.5" orient="auto">
+            <polygon points="0 0, 9 3.5, 0 7" fill="#374151"/>
+          </marker>
+          <marker id="ce-arr-blue" markerWidth="9" markerHeight="7" refX="0" refY="3.5" orient="auto">
+            <polygon points="0 0, 9 3.5, 0 7" fill="#1e4a8a"/>
+          </marker>
+          <!-- Drop shadow for nodes -->
+          <filter id="ce-sh" x="-20%" y="-25%" width="140%" height="150%">
+            <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.14"/>
+          </filter>
+        </defs>
+
+        <!-- ── Phase section dividers ── -->
+        <line x1="130" y1="110" x2="860" y2="110" stroke="#d1d9e8" stroke-width="0.8" stroke-dasharray="4,4"/>
+        <line x1="130" y1="280" x2="860" y2="280" stroke="#d1d9e8" stroke-width="0.8" stroke-dasharray="4,4"/>
+        <line x1="130" y1="335" x2="860" y2="335" stroke="#d1d9e8" stroke-width="0.8" stroke-dasharray="4,4"/>
+
+        <!-- ── Phase labels – LEFT ── -->
+        <text x="8" y="78" font-family="Segoe UI,system-ui,sans-serif" font-size="7.5"
+              font-weight="700" letter-spacing="1.3" fill="#b0b7c8">IDENTIFICATION</text>
+
+        <text x="8" y="244" font-family="Segoe UI,system-ui,sans-serif" font-size="7.5"
+              font-weight="700" letter-spacing="1.3" fill="#b0b7c8">ADAPTIVE STRATEGIC</text>
+        <text x="8" y="255" font-family="Segoe UI,system-ui,sans-serif" font-size="7.5"
+              font-weight="700" letter-spacing="1.3" fill="#b0b7c8">MANAGEMENT</text>
+
+        <text x="8" y="355" font-family="Segoe UI,system-ui,sans-serif" font-size="7.5"
+              font-weight="700" letter-spacing="1.3" fill="#b0b7c8">ADAPTIVE TACTICAL</text>
+        <text x="8" y="366" font-family="Segoe UI,system-ui,sans-serif" font-size="7.5"
+              font-weight="700" letter-spacing="1.3" fill="#b0b7c8">MANAGEMENT</text>
+
+        <!-- ── Phase labels – RIGHT ── -->
+        <text x="870" y="155" font-family="Segoe UI,system-ui,sans-serif" font-size="7.5"
+              font-weight="700" letter-spacing="1.3" fill="#b0b7c8">PROGRAMMING</text>
+        <text x="870" y="365" font-family="Segoe UI,system-ui,sans-serif" font-size="7.5"
+              font-weight="700" letter-spacing="1.3" fill="#b0b7c8">IMPLEMENTATION</text>
+
+        <!-- ── Full-cycle feedback arrow (left margin) ── -->
+        <path d="M 142 440 V 78 H 455" stroke="#9ca3af" stroke-width="1.1"
+              fill="none" stroke-dasharray="5,3" marker-end="url(#ce-arr)"/>
+
+        <!-- ══ ARROWS / CONNECTORS ══ -->
+
+        <!-- SCD → CPF (vertical) -->
+        <line x1="500" y1="101" x2="500" y2="130" stroke="#6b7280" stroke-width="1.4"
+              marker-end="url(#ce-arr)"/>
+
+        <!-- CPF → Annual Business Plan Review (L-shape: go left, then down) -->
+        <path d="M 463 152 H 287 V 222" stroke="#6b7280" stroke-width="1.4"
+              fill="none" marker-end="url(#ce-arr)"/>
+
+        <!-- CPF → 3 outcomes (trunk + branches) -->
+        <!-- vertical trunk from CPF bottom -->
+        <line x1="500" y1="170" x2="500" y2="210" stroke="#6b7280" stroke-width="1.2"/>
+        <!-- horizontal crossbar at y=210 -->
+        <line x1="390" y1="210" x2="636" y2="210" stroke="#6b7280" stroke-width="1.2"/>
+        <!-- arrow to outcome1 -->
+        <line x1="390" y1="210" x2="390" y2="218" stroke="#6b7280" stroke-width="1.2"
+              marker-end="url(#ce-arr)"/>
+        <!-- arrow to outcome2 -->
+        <line x1="519" y1="210" x2="519" y2="218" stroke="#6b7280" stroke-width="1.2"
+              marker-end="url(#ce-arr)"/>
+        <!-- arrow to outcome3 -->
+        <line x1="636" y1="210" x2="636" y2="218" stroke="#6b7280" stroke-width="1.2"
+              marker-end="url(#ce-arr)"/>
+
+        <!-- Outcome1 → connector bar -->
+        <line x1="390" y1="256" x2="390" y2="320" stroke="#6b7280" stroke-width="1.1"
+              stroke-dasharray="3,2"/>
+        <!-- Outcome2 → connector bar -->
+        <line x1="519" y1="256" x2="519" y2="320" stroke="#6b7280" stroke-width="1.1"
+              stroke-dasharray="3,2"/>
+        <!-- Outcome3 → connector bar -->
+        <line x1="636" y1="256" x2="636" y2="320" stroke="#6b7280" stroke-width="1.1"
+              stroke-dasharray="3,2"/>
+
+        <!-- Annual Business Plan Review → connector bar -->
+        <line x1="213" y1="276" x2="213" y2="320" stroke="#6b7280" stroke-width="1.1"
+              stroke-dasharray="3,2"/>
+
+        <!-- Horizontal connector bar -->
+        <line x1="195" y1="320" x2="850" y2="320" stroke="#374151" stroke-width="1.5"/>
+
+        <!-- Connector bar → each ellipse (11 arrows) -->
+        <line x1="200" y1="320" x2="200" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce-arr)"/>
+        <line x1="265" y1="320" x2="265" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce-arr)"/>
+        <line x1="330" y1="320" x2="330" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce-arr)"/>
+        <line x1="395" y1="320" x2="395" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce-arr)"/>
+        <line x1="460" y1="320" x2="460" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce-arr)"/>
+        <line x1="520" y1="320" x2="520" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce-arr)"/>
+        <line x1="580" y1="320" x2="580" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce-arr)"/>
+        <line x1="640" y1="320" x2="640" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce-arr)"/>
+        <line x1="700" y1="320" x2="700" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce-arr)"/>
+        <line x1="760" y1="320" x2="760" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce-arr)"/>
+        <line x1="820" y1="320" x2="820" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce-arr)"/>
+
+        <!-- ══ NODES ══ -->
+
+        <!-- SCD -->
+        <g class="ce-node" onclick="openCEPanel('scd')" tabindex="0" role="button" aria-label="SCD">
+          <rect class="ce-bg" x="455" y="63" width="90" height="38" rx="4"
+                fill="#1e4a8a" filter="url(#ce-sh)"/>
+          <text x="500" y="87" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+                font-size="14" font-weight="700" fill="#ffffff">SCD</text>
+        </g>
+
+        <!-- CPF -->
+        <g class="ce-node" onclick="openCEPanel('cpf')" tabindex="0" role="button" aria-label="CPF">
+          <rect class="ce-bg" x="463" y="132" width="74" height="38" rx="4"
+                fill="#1e4a8a" filter="url(#ce-sh)"/>
+          <text x="500" y="156" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+                font-size="14" font-weight="700" fill="#ffffff">CPF</text>
+        </g>
+
+        <!-- Annual Business Plan Review -->
+        <g class="ce-node" onclick="openCEPanel('abp')" tabindex="0" role="button" aria-label="Annual Business Plan Review">
+          <rect class="ce-bg" x="138" y="222" width="150" height="54" rx="5"
+                fill="#1e4a8a" filter="url(#ce-sh)"/>
+          <text x="213" y="244" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+                font-size="11" font-weight="700" fill="#ffffff">Annual Business</text>
+          <text x="213" y="259" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+                font-size="11" font-weight="700" fill="#ffffff">Plan Review</text>
+        </g>
+
+        <!-- CPF Outcome 1 -->
+        <g class="ce-node" onclick="openCEPanel('outcome')" tabindex="0" role="button" aria-label="CPF Outcome 1">
+          <rect class="ce-bg" x="335" y="218" width="110" height="38" rx="4"
+                fill="#1e4a8a" filter="url(#ce-sh)"/>
+          <text x="390" y="236" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+                font-size="10.5" font-weight="700" fill="#ffffff">CPF outcome</text>
+        </g>
+
+        <!-- CPF Outcome 2 -->
+        <g class="ce-node" onclick="openCEPanel('outcome')" tabindex="0" role="button" aria-label="CPF Outcome 2">
+          <rect class="ce-bg" x="464" y="218" width="110" height="38" rx="4"
+                fill="#1e4a8a" filter="url(#ce-sh)"/>
+          <text x="519" y="236" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+                font-size="10.5" font-weight="700" fill="#ffffff">CPF outcome</text>
+        </g>
+
+        <!-- CPF Outcome 3 -->
+        <g class="ce-node" onclick="openCEPanel('outcome')" tabindex="0" role="button" aria-label="CPF Outcome 3">
+          <rect class="ce-bg" x="581" y="218" width="110" height="38" rx="4"
+                fill="#1e4a8a" filter="url(#ce-sh)"/>
+          <text x="636" y="236" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+                font-size="10.5" font-weight="700" fill="#ffffff">CPF outcome</text>
+        </g>
+
+        <!-- Corporate Scorecard Indicators (clickable label) -->
+        <g class="ce-text-node" onclick="openCEPanel('scorecard')" tabindex="0" role="button"
+           aria-label="Corporate Scorecard Indicators">
+          <text x="519" y="283" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+                font-size="10" fill="#374151" font-style="italic">Corporate Scorecard Indicators</text>
+        </g>
+
+        <!-- ── Bottom ellipses row ── -->
+
+        <!-- PASA (lighter gray) -->
+        <g class="ce-ellipse-node" onclick="openCEPanel('pasa')" tabindex="0" role="button" aria-label="PASA">
+          <ellipse cx="200" cy="410" rx="20" ry="52" fill="#aab4c8" filter="url(#ce-sh)"/>
+          <text transform="rotate(-90,200,410)" x="200" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700"
+                fill="#ffffff">PASA</text>
+        </g>
+
+        <!-- Project 1 -->
+        <g class="ce-ellipse-node" onclick="openCEPanel('project')" tabindex="0" role="button" aria-label="Project">
+          <ellipse cx="265" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce-sh)"/>
+          <text transform="rotate(-90,265,410)" x="265" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700"
+                fill="#ffffff">Project</text>
+        </g>
+
+        <!-- Project 2 -->
+        <g class="ce-ellipse-node" onclick="openCEPanel('project')" tabindex="0" role="button" aria-label="Project">
+          <ellipse cx="330" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce-sh)"/>
+          <text transform="rotate(-90,330,410)" x="330" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700"
+                fill="#ffffff">Project</text>
+        </g>
+
+        <!-- Pipeline 1 -->
+        <g class="ce-ellipse-node" onclick="openCEPanel('pipeline')" tabindex="0" role="button" aria-label="Pipeline">
+          <ellipse cx="395" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce-sh)"/>
+          <text transform="rotate(-90,395,410)" x="395" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700"
+                fill="#ffffff">Pipeline</text>
+        </g>
+
+        <!-- Pipeline 2 -->
+        <g class="ce-ellipse-node" onclick="openCEPanel('pipeline')" tabindex="0" role="button" aria-label="Pipeline">
+          <ellipse cx="460" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce-sh)"/>
+          <text transform="rotate(-90,460,410)" x="460" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700"
+                fill="#ffffff">Pipeline</text>
+        </g>
+
+        <!-- Advisory -->
+        <g class="ce-ellipse-node" onclick="openCEPanel('advisory')" tabindex="0" role="button" aria-label="Advisory">
+          <ellipse cx="520" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce-sh)"/>
+          <text transform="rotate(-90,520,410)" x="520" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700"
+                fill="#ffffff">Advisory</text>
+        </g>
+
+        <!-- Project 3 -->
+        <g class="ce-ellipse-node" onclick="openCEPanel('project')" tabindex="0" role="button" aria-label="Project">
+          <ellipse cx="580" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce-sh)"/>
+          <text transform="rotate(-90,580,410)" x="580" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700"
+                fill="#ffffff">Project</text>
+        </g>
+
+        <!-- Project 4 -->
+        <g class="ce-ellipse-node" onclick="openCEPanel('project')" tabindex="0" role="button" aria-label="Project">
+          <ellipse cx="640" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce-sh)"/>
+          <text transform="rotate(-90,640,410)" x="640" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700"
+                fill="#ffffff">Project</text>
+        </g>
+
+        <!-- Pipeline 3 -->
+        <g class="ce-ellipse-node" onclick="openCEPanel('pipeline')" tabindex="0" role="button" aria-label="Pipeline">
+          <ellipse cx="700" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce-sh)"/>
+          <text transform="rotate(-90,700,410)" x="700" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700"
+                fill="#ffffff">Pipeline</text>
+        </g>
+
+        <!-- Pipeline 4 -->
+        <g class="ce-ellipse-node" onclick="openCEPanel('pipeline')" tabindex="0" role="button" aria-label="Pipeline">
+          <ellipse cx="760" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce-sh)"/>
+          <text transform="rotate(-90,760,410)" x="760" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700"
+                fill="#ffffff">Pipeline</text>
+        </g>
+
+        <!-- Project 5 -->
+        <g class="ce-ellipse-node" onclick="openCEPanel('project')" tabindex="0" role="button" aria-label="Project">
+          <ellipse cx="820" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce-sh)"/>
+          <text transform="rotate(-90,820,410)" x="820" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700"
+                fill="#ffffff">Project</text>
+        </g>
+
+        <!-- ── WBG Institutions label (clickable) ── -->
+        <g class="ce-text-node" onclick="openCEPanel('wbg')" tabindex="0" role="button"
+           aria-label="IDA-IBRD IFC MIGA">
+          <text x="510" y="477" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+                font-size="11" font-weight="700" fill="#2563a8">IDA-IBRD &nbsp;|&nbsp; IFC &nbsp;|&nbsp; MIGA</text>
+        </g>
+
+        <!-- ── Footer note ── -->
+        <text x="510" y="497" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+              font-size="9.5" fill="#9ca3af" font-style="italic">
+          Ongoing implementation support, operational troubleshooting
+        </text>
+
+        <!-- User-created connections and nodes (injected by JS) -->
+        <g id="ce-conn-layer"></g>
+        <g id="ce-user-layer"></g>
+        <path id="ce-conn-preview" fill="none" stroke="#7B8FAA" stroke-width="2"
+              stroke-dasharray="8 4" opacity="0.55" style="display:none; pointer-events:none"/>
+
+      </svg>
+    </div><!-- end #ce-svg-wrap -->
+
+    <!-- CE detail panel (slides in from right) -->
+    <div id="ce-detail-panel">
+      <div id="ce-panel-header">
+        <button id="ce-panel-close" onclick="closeCEPanel()">&#x2715;</button>
+        <div id="ce-panel-type"></div>
+        <div id="ce-panel-title"></div>
+      </div>
+      <div id="ce-panel-body"></div>
+    </div>
+  </div><!-- end #ce-body -->
+</div><!-- end #ce-overlay -->
+
+<!-- ══════════════════════════════════════════════════════════════════
+     CE Cycle – FCV Context Overlay  (Slide 17)
+     ══════════════════════════════════════════════════════════════════ -->
+<div id="ce17-overlay">
+  <div id="ce17-header">
+    <h2>The Country Engagement Cycle in FCV Contexts &mdash; What&rsquo;s Different</h2>
+    <div class="ce-zoom-controls">
+      <button class="ce-zbtn" onclick="ce17PZ.zoomIn()" title="Zoom in">+</button>
+      <button class="ce-zbtn" onclick="ce17PZ.zoomOut()" title="Zoom out">&#8722;</button>
+      <button class="ce-zbtn reset" onclick="ce17PZ.reset()" title="Reset view">&#8635;</button>
+    </div>
+    <div class="ce-toolbar">
+      <button class="ce-tbtn" id="ce17-addnode-btn" onclick="showCEAddNodeModal('ce17')">+ Node</button>
+    </div>
+    <button id="ce17-close-btn" onclick="closeCE17Cycle()">&#8592; Back to Map</button>
+  </div>
+  <div id="ce17-body">
+    <div id="ce17-svg-wrap">
+      <svg id="ce17-svg" viewBox="0 0 1100 560" xmlns="http://www.w3.org/2000/svg"
+           preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <marker id="ce17-arr" markerWidth="9" markerHeight="7" refX="0" refY="3.5" orient="auto">
+            <polygon points="0 0, 9 3.5, 0 7" fill="#6b7280"/>
+          </marker>
+          <marker id="ce17-arr-blue" markerWidth="9" markerHeight="7" refX="0" refY="3.5" orient="auto">
+            <polygon points="0 0, 9 3.5, 0 7" fill="#1e4a8a"/>
+          </marker>
+          <marker id="ce17-arr-green" markerWidth="9" markerHeight="7" refX="0" refY="3.5" orient="auto">
+            <polygon points="0 0, 9 3.5, 0 7" fill="#0f6e56"/>
+          </marker>
+          <filter id="ce17-sh" x="-20%" y="-25%" width="140%" height="150%">
+            <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.14"/>
+          </filter>
+        </defs>
+
+        <!-- ── Phase section dividers ── -->
+        <line x1="130" y1="110" x2="855" y2="110" stroke="#d1d9e8" stroke-width="0.8" stroke-dasharray="4,4"/>
+        <line x1="130" y1="280" x2="855" y2="280" stroke="#d1d9e8" stroke-width="0.8" stroke-dasharray="4,4"/>
+        <line x1="130" y1="335" x2="855" y2="335" stroke="#d1d9e8" stroke-width="0.8" stroke-dasharray="4,4"/>
+
+        <!-- ── Phase labels – LEFT ── -->
+        <text x="8" y="88" font-family="Segoe UI,system-ui,sans-serif" font-size="7.5"
+              font-weight="700" letter-spacing="1.3" fill="#b0b7c8">IDENTIFICATION</text>
+        <!-- moved below new left nodes -->
+        <text x="8" y="317" font-family="Segoe UI,system-ui,sans-serif" font-size="7.5"
+              font-weight="700" letter-spacing="1.3" fill="#b0b7c8">ADAPTIVE STRATEGIC</text>
+        <text x="8" y="329" font-family="Segoe UI,system-ui,sans-serif" font-size="7.5"
+              font-weight="700" letter-spacing="1.3" fill="#b0b7c8">MANAGEMENT</text>
+        <text x="8" y="355" font-family="Segoe UI,system-ui,sans-serif" font-size="7.5"
+              font-weight="700" letter-spacing="1.3" fill="#b0b7c8">ADAPTIVE TACTICAL</text>
+        <text x="8" y="366" font-family="Segoe UI,system-ui,sans-serif" font-size="7.5"
+              font-weight="700" letter-spacing="1.3" fill="#b0b7c8">MANAGEMENT</text>
+
+        <!-- ── Phase labels – RIGHT (shifted to fit before callout boxes) ── -->
+        <text x="868" y="120" font-family="Segoe UI,system-ui,sans-serif" font-size="7.5"
+              font-weight="700" letter-spacing="1.3" fill="#b0b7c8">PROGRAMMING</text>
+        <text x="868" y="455" font-family="Segoe UI,system-ui,sans-serif" font-size="7.5"
+              font-weight="700" letter-spacing="1.3" fill="#b0b7c8">IMPLEMENTATION</text>
+
+        <!-- ── Full-cycle feedback arrow (left margin) ── -->
+        <path d="M 142 440 V 78 H 455" stroke="#9ca3af" stroke-width="1.1"
+              fill="none" stroke-dasharray="5,3" marker-end="url(#ce17-arr)"/>
+
+        <!-- ══ CONNECTORS ══ -->
+
+        <!-- SCD → CPF (vertical) -->
+        <line x1="500" y1="101" x2="500" y2="130" stroke="#6b7280" stroke-width="1.4"
+              marker-end="url(#ce17-arr)"/>
+
+        <!-- Short link between SCD and RRA (same level) -->
+        <line x1="545" y1="78" x2="582" y2="78" stroke="#6b7280" stroke-width="1.2"/>
+
+        <!-- CPF horizontal trunk -->
+        <line x1="463" y1="152" x2="260" y2="152" stroke="#6b7280" stroke-width="1.4"/>
+        <!-- ABP branch from trunk (vertical drop) -->
+        <line x1="285" y1="152" x2="285" y2="222" stroke="#6b7280" stroke-width="1.4"
+              marker-end="url(#ce17-arr)"/>
+
+        <!-- CPF → 3 outcomes (trunk + branches) -->
+        <line x1="500" y1="170" x2="500" y2="210" stroke="#6b7280" stroke-width="1.2"/>
+        <line x1="390" y1="210" x2="636" y2="210" stroke="#6b7280" stroke-width="1.2"/>
+        <line x1="390" y1="210" x2="390" y2="218" stroke="#6b7280" stroke-width="1.2"
+              marker-end="url(#ce17-arr)"/>
+        <line x1="519" y1="210" x2="519" y2="218" stroke="#6b7280" stroke-width="1.2"
+              marker-end="url(#ce17-arr)"/>
+        <line x1="636" y1="210" x2="636" y2="218" stroke="#6b7280" stroke-width="1.2"
+              marker-end="url(#ce17-arr)"/>
+
+        <!-- Outcome columns → connector bar -->
+        <line x1="390" y1="256" x2="390" y2="320" stroke="#6b7280" stroke-width="1.1" stroke-dasharray="3,2"/>
+        <line x1="519" y1="256" x2="519" y2="320" stroke="#6b7280" stroke-width="1.1" stroke-dasharray="3,2"/>
+        <line x1="636" y1="256" x2="636" y2="320" stroke="#6b7280" stroke-width="1.1" stroke-dasharray="3,2"/>
+        <!-- ABP → connector bar -->
+        <line x1="213" y1="276" x2="213" y2="320" stroke="#6b7280" stroke-width="1.1" stroke-dasharray="3,2"/>
+
+        <!-- Horizontal connector bar -->
+        <line x1="195" y1="320" x2="850" y2="320" stroke="#374151" stroke-width="1.5"/>
+
+        <!-- Connector bar → 11 ellipses -->
+        <line x1="200" y1="320" x2="200" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce17-arr)"/>
+        <line x1="265" y1="320" x2="265" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce17-arr)"/>
+        <line x1="330" y1="320" x2="330" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce17-arr)"/>
+        <line x1="395" y1="320" x2="395" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce17-arr)"/>
+        <line x1="460" y1="320" x2="460" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce17-arr)"/>
+        <line x1="520" y1="320" x2="520" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce17-arr)"/>
+        <line x1="580" y1="320" x2="580" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce17-arr)"/>
+        <line x1="640" y1="320" x2="640" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce17-arr)"/>
+        <line x1="700" y1="320" x2="700" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce17-arr)"/>
+        <line x1="760" y1="320" x2="760" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce17-arr)"/>
+        <line x1="820" y1="320" x2="820" y2="358" stroke="#6b7280" stroke-width="1.1" marker-end="url(#ce17-arr)"/>
+
+
+        <!-- Callout 1 → RRA right edge connector -->
+        <line x1="668" y1="87" x2="663" y2="87" stroke="#0f6e56" stroke-width="1"
+              marker-end="url(#ce17-arr-green)"/>
+
+
+        <!-- ══ BASE NODES (same positions as Slide 16) ══ -->
+
+        <!-- SCD -->
+        <g class="ce-node" onclick="openCE17Panel('scd')" tabindex="0" role="button" aria-label="SCD">
+          <rect class="ce-bg" x="455" y="63" width="90" height="38" rx="4"
+                fill="#1e4a8a" filter="url(#ce17-sh)"/>
+          <text x="500" y="87" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+                font-size="14" font-weight="700" fill="#ffffff">SCD</text>
+        </g>
+
+        <!-- CPF -->
+        <g class="ce-node" onclick="openCE17Panel('cpf')" tabindex="0" role="button" aria-label="CPF">
+          <rect class="ce-bg" x="463" y="132" width="74" height="38" rx="4"
+                fill="#1e4a8a" filter="url(#ce17-sh)"/>
+          <text x="500" y="156" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+                font-size="14" font-weight="700" fill="#ffffff">CPF</text>
+        </g>
+
+        <!-- Annual Business Plan Review -->
+        <g class="ce-node" onclick="openCE17Panel('abp')" tabindex="0" role="button" aria-label="Annual Business Plan Review">
+          <rect class="ce-bg" x="138" y="222" width="150" height="54" rx="5"
+                fill="#1e4a8a" filter="url(#ce17-sh)"/>
+          <text x="213" y="244" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+                font-size="11" font-weight="700" fill="#ffffff">Annual Business</text>
+          <text x="213" y="259" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+                font-size="11" font-weight="700" fill="#ffffff">Plan Review</text>
+        </g>
+
+        <!-- CPF Outcome 1 -->
+        <g class="ce-node" onclick="openCE17Panel('outcome')" tabindex="0" role="button" aria-label="CPF Outcome">
+          <rect class="ce-bg" x="335" y="218" width="110" height="38" rx="4"
+                fill="#1e4a8a" filter="url(#ce17-sh)"/>
+          <text x="390" y="236" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+                font-size="10.5" font-weight="700" fill="#ffffff">CPF outcome</text>
+        </g>
+
+        <!-- CPF Outcome 2 -->
+        <g class="ce-node" onclick="openCE17Panel('outcome')" tabindex="0" role="button" aria-label="CPF Outcome">
+          <rect class="ce-bg" x="464" y="218" width="110" height="38" rx="4"
+                fill="#1e4a8a" filter="url(#ce17-sh)"/>
+          <text x="519" y="236" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+                font-size="10.5" font-weight="700" fill="#ffffff">CPF outcome</text>
+        </g>
+
+        <!-- CPF Outcome 3 -->
+        <g class="ce-node" onclick="openCE17Panel('outcome')" tabindex="0" role="button" aria-label="CPF Outcome">
+          <rect class="ce-bg" x="581" y="218" width="110" height="38" rx="4"
+                fill="#1e4a8a" filter="url(#ce17-sh)"/>
+          <text x="636" y="236" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+                font-size="10.5" font-weight="700" fill="#ffffff">CPF outcome</text>
+        </g>
+
+        <!-- Corporate Scorecard Indicators (clickable label) -->
+        <g class="ce-text-node" onclick="openCE17Panel('scorecard')" tabindex="0" role="button"
+           aria-label="Corporate Scorecard Indicators">
+          <text x="519" y="283" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+                font-size="10" fill="#374151" font-style="italic">Corporate Scorecard Indicators</text>
+        </g>
+
+        <!-- ── Ellipses row (FCV-sensitive implementation zone) ── -->
+
+        <!-- Dashed highlight border around the entire ellipses zone -->
+        <rect x="178" y="356" width="666" height="110" rx="6"
+              fill="none" stroke="#1e4a8a" stroke-width="1.5" stroke-dasharray="6,3" opacity="0.55"/>
+
+        <!-- PASA -->
+        <g class="ce-ellipse-node" onclick="openCE17Panel('pasa')" tabindex="0" role="button" aria-label="PASA">
+          <ellipse cx="200" cy="410" rx="20" ry="52" fill="#aab4c8" filter="url(#ce17-sh)"/>
+          <text transform="rotate(-90,200,410)" x="200" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700" fill="#ffffff">PASA</text>
+        </g>
+        <!-- Project 1 -->
+        <g class="ce-ellipse-node" onclick="openCE17Panel('project')" tabindex="0" role="button" aria-label="Project">
+          <ellipse cx="265" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce17-sh)"/>
+          <text transform="rotate(-90,265,410)" x="265" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700" fill="#ffffff">Project</text>
+        </g>
+        <!-- Project 2 -->
+        <g class="ce-ellipse-node" onclick="openCE17Panel('project')" tabindex="0" role="button" aria-label="Project">
+          <ellipse cx="330" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce17-sh)"/>
+          <text transform="rotate(-90,330,410)" x="330" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700" fill="#ffffff">Project</text>
+        </g>
+        <!-- Pipeline 1 -->
+        <g class="ce-ellipse-node" onclick="openCE17Panel('pipeline')" tabindex="0" role="button" aria-label="Pipeline">
+          <ellipse cx="395" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce17-sh)"/>
+          <text transform="rotate(-90,395,410)" x="395" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700" fill="#ffffff">Pipeline</text>
+        </g>
+        <!-- Pipeline 2 -->
+        <g class="ce-ellipse-node" onclick="openCE17Panel('pipeline')" tabindex="0" role="button" aria-label="Pipeline">
+          <ellipse cx="460" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce17-sh)"/>
+          <text transform="rotate(-90,460,410)" x="460" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700" fill="#ffffff">Pipeline</text>
+        </g>
+        <!-- Advisory -->
+        <g class="ce-ellipse-node" onclick="openCE17Panel('advisory')" tabindex="0" role="button" aria-label="Advisory">
+          <ellipse cx="520" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce17-sh)"/>
+          <text transform="rotate(-90,520,410)" x="520" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700" fill="#ffffff">Advisory</text>
+        </g>
+        <!-- Project 3 -->
+        <g class="ce-ellipse-node" onclick="openCE17Panel('project')" tabindex="0" role="button" aria-label="Project">
+          <ellipse cx="580" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce17-sh)"/>
+          <text transform="rotate(-90,580,410)" x="580" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700" fill="#ffffff">Project</text>
+        </g>
+        <!-- Project 4 -->
+        <g class="ce-ellipse-node" onclick="openCE17Panel('project')" tabindex="0" role="button" aria-label="Project">
+          <ellipse cx="640" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce17-sh)"/>
+          <text transform="rotate(-90,640,410)" x="640" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700" fill="#ffffff">Project</text>
+        </g>
+        <!-- Pipeline 3 -->
+        <g class="ce-ellipse-node" onclick="openCE17Panel('pipeline')" tabindex="0" role="button" aria-label="Pipeline">
+          <ellipse cx="700" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce17-sh)"/>
+          <text transform="rotate(-90,700,410)" x="700" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700" fill="#ffffff">Pipeline</text>
+        </g>
+        <!-- Pipeline 4 -->
+        <g class="ce-ellipse-node" onclick="openCE17Panel('pipeline')" tabindex="0" role="button" aria-label="Pipeline">
+          <ellipse cx="760" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce17-sh)"/>
+          <text transform="rotate(-90,760,410)" x="760" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700" fill="#ffffff">Pipeline</text>
+        </g>
+        <!-- Project 5 -->
+        <g class="ce-ellipse-node" onclick="openCE17Panel('project')" tabindex="0" role="button" aria-label="Project">
+          <ellipse cx="820" cy="410" rx="20" ry="52" fill="#3a4f72" filter="url(#ce17-sh)"/>
+          <text transform="rotate(-90,820,410)" x="820" y="414" text-anchor="middle"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="10" font-weight="700" fill="#ffffff">Project</text>
+        </g>
+
+        <!-- WBG institutions label -->
+        <g class="ce-text-node" onclick="openCE17Panel('wbg')" tabindex="0" role="button" aria-label="IDA-IBRD IFC MIGA">
+          <text x="510" y="480" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+                font-size="11" font-weight="700" fill="#2563a8">IDA-IBRD &nbsp;|&nbsp; IFC &nbsp;|&nbsp; MIGA</text>
+        </g>
+
+        <!-- Footer note -->
+        <text x="510" y="490" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+              font-size="9.5" fill="#9ca3af" font-style="italic">
+          Ongoing implementation support, operational troubleshooting
+        </text>
+
+        <!-- ══════════════════════════════════════════════════════
+             FCV-SPECIFIC ADDITIONS  (slide 17)
+             ══════════════════════════════════════════════════════ -->
+
+        <!-- ── NEW NODE: RRA ── -->
+        <g class="ce-node" onclick="openCE17Panel('rra')" tabindex="0" role="button" aria-label="RRA">
+          <rect class="ce-bg" x="582" y="59" width="80" height="38" rx="4"
+                fill="#1e4a8a" filter="url(#ce17-sh)"/>
+          <text x="622" y="83" text-anchor="middle" font-family="Segoe UI,system-ui,sans-serif"
+                font-size="14" font-weight="700" fill="#ffffff">RRA</text>
+        </g>
+
+
+        <!-- ══ CALLOUT BOX 1 — FCV Risk Identification (near RRA) ══ -->
+        <g class="ce-node" onclick="openCE17Panel('callout1')" tabindex="0" role="button"
+           aria-label="FCV difference 1: identifies FCV-related risks">
+          <rect x="714" y="51" width="130" height="65" rx="10"
+                fill="#e1f5ee" stroke="#0f6e56" stroke-width="0.7"/>
+          <circle cx="779" cy="51" r="11" fill="#e1f5ee" stroke="#0f6e56" stroke-width="0.7"/>
+          <text x="779" y="51" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="11" font-weight="600" fill="#085041">1</text>
+          <text x="779" y="68" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="9.5" font-weight="600" fill="#085041">RRA</text>
+          <text x="779" y="84" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="9" font-style="italic" fill="#0f6e56">Identifies the main</text>
+          <text x="779" y="99" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="9" font-style="italic" fill="#0f6e56">FCV-related risks</text>
+        </g>
+
+        <!-- ══ CALLOUT BOX 2 — FCV-responsive Outcomes & Projects ══ -->
+        <g class="ce-node" onclick="openCE17Panel('callout2')" tabindex="0" role="button"
+           aria-label="FCV difference 2: FCV-responsive outcomes and projects">
+          <rect x="865" y="168" width="222" height="81" rx="10"
+                fill="#e1f5ee" stroke="#0f6e56" stroke-width="0.7"/>
+          <circle cx="976" cy="168" r="11" fill="#e1f5ee" stroke="#0f6e56" stroke-width="0.7"/>
+          <text x="976" y="168" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="11" font-weight="600" fill="#085041">2</text>
+          <text x="976" y="185" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="9.5" font-weight="600" fill="#085041">FCV-Responsive Programming</text>
+          <text x="976" y="202" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="9" font-style="italic" fill="#0f6e56">At least some outcomes and</text>
+          <text x="976" y="217" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="9" font-style="italic" fill="#0f6e56">projects should be FCV-responsive</text>
+          <text x="976" y="232" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="9" font-style="italic" fill="#0f6e56">and contribute to lowering FCV risks</text>
+        </g>
+
+        <!-- ══ CALLOUT BOX 3 — IDA financing for FCS ══ -->
+        <g class="ce-node" onclick="openCE17Panel('fcve')" tabindex="0" role="button"
+           aria-label="FCV difference 3: IDA financing for FCS">
+          <rect x="143" y="63" width="150" height="65" rx="10"
+                fill="#e1f5ee" stroke="#0f6e56" stroke-width="0.7"/>
+          <circle cx="218" cy="63" r="11" fill="#e1f5ee" stroke="#0f6e56" stroke-width="0.7"/>
+          <text x="218" y="63" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="11" font-weight="600" fill="#085041">3</text>
+          <text x="218" y="80" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="9.5" font-weight="600" fill="#085041">IDA financing for FCS</text>
+          <text x="218" y="96" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="9" font-style="italic" fill="#0f6e56">Access to IDA FCVE,</text>
+          <text x="218" y="111" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="9" font-style="italic" fill="#0f6e56">WHR, and PSW financing</text>
+        </g>
+
+        <!-- ══ CALLOUT BOX 4 — FCV-sensitive Projects ══ -->
+        <g class="ce-node" onclick="openCE17Panel('callout4')" tabindex="0" role="button"
+           aria-label="FCV difference 4: FCV-sensitive projects">
+          <rect x="881" y="333" width="190" height="82" rx="10"
+                fill="#e1f5ee" stroke="#0f6e56" stroke-width="0.7"/>
+          <circle cx="976" cy="333" r="11" fill="#e1f5ee" stroke="#0f6e56" stroke-width="0.7"/>
+          <text x="976" y="333" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="11" font-weight="600" fill="#085041">4</text>
+          <text x="976" y="350" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="9.5" font-weight="600" fill="#085041">FCV-Sensitive Programming</text>
+          <text x="976" y="368" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="9" font-style="italic" fill="#0f6e56">Must mitigate FCV-risks during</text>
+          <text x="976" y="383" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="9" font-style="italic" fill="#0f6e56">implementation and must</text>
+          <text x="976" y="398" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="9" font-style="italic" fill="#0f6e56">not increase FCV risks</text>
+        </g>
+
+        <!-- ══ CALLOUT BOX 5 — Enhanced monitoring ══ -->
+        <g class="ce-node" onclick="openCE17Panel('callout5')" tabindex="0" role="button"
+           aria-label="FCV difference 5: enhanced monitoring">
+          <rect x="339" y="496" width="332" height="67" rx="10"
+                fill="#e1f5ee" stroke="#0f6e56" stroke-width="0.7"/>
+          <circle cx="505" cy="496" r="11" fill="#e1f5ee" stroke="#0f6e56" stroke-width="0.7"/>
+          <text x="505" y="496" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="11" font-weight="600" fill="#085041">5</text>
+          <text x="505" y="513" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="9.5" font-weight="600" fill="#085041">Implementation and Adaptive Tactical Management</text>
+          <text x="505" y="531" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="9" font-style="italic" fill="#0f6e56">Greater need for ongoing FCV-risk and remote monitoring,</text>
+          <text x="505" y="546" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="9" font-style="italic" fill="#0f6e56">and security management protocols during implementation</text>
+        </g>
+
+        <!-- ══ CALLOUT BOX 6 — RRA Updates ══ -->
+        <g class="ce-node" onclick="openCE17Panel('rra_updates')" tabindex="0" role="button"
+           aria-label="FCV difference 6: RRA updates feed into Annual Business Plan Review">
+          <rect x="33" y="272" width="82" height="32" rx="8"
+                fill="#e1f5ee" stroke="#0f6e56" stroke-width="0.7"/>
+          <circle cx="74" cy="272" r="11" fill="#e1f5ee" stroke="#0f6e56" stroke-width="0.7"/>
+          <text x="74" y="272" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="11" font-weight="600" fill="#085041">6</text>
+          <text x="74" y="288" text-anchor="middle" dominant-baseline="central"
+                font-family="Segoe UI,system-ui,sans-serif" font-size="8.5" font-weight="600" fill="#085041">RRA Updates</text>
+        </g>
+
+
+        <!-- User-created connections and nodes (injected by JS) -->
+        <g id="ce17-conn-layer"></g>
+        <g id="ce17-user-layer"></g>
+        <path id="ce17-conn-preview" fill="none" stroke="#7B8FAA" stroke-width="2"
+              stroke-dasharray="8 4" opacity="0.55" style="display:none; pointer-events:none"/>
+
+      </svg>
+    </div><!-- end #ce17-svg-wrap -->
+  </div><!-- end #ce17-body -->
+</div><!-- end #ce17-overlay -->
+
+<!-- CE17 detail panel (fixed at body level, shared across slide 17 nodes) -->
+<div id="ce17-detail-panel">
+  <div id="ce17-panel-header">
+    <button id="ce17-panel-close" onclick="closeCE17Panel()">&#x2715;</button>
+    <button id="ce17-panel-back" onclick="ce17BackToCategory()">&#8592; Back</button>
+    <div id="ce17-panel-type"></div>
+    <div id="ce17-panel-title" contenteditable="true" spellcheck="false"></div>
+  </div>
+  <div id="ce17-panel-body"></div>
+</div>
+
+<!-- CE Add Node Modal (shared by both CE overlays) -->
+<div id="ce-add-modal">
+  <div id="ce-add-modal-box">
+    <h3>Add Node</h3>
+    <input id="ce-add-modal-inp" type="text" placeholder="Node label…" maxlength="60"
+           onkeydown="if(event.key==='Enter')confirmCEAddNode();if(event.key==='Escape')hideCEAddNodeModal()"/>
+    <div class="ce-shape-row">
+      <div class="ce-shape-opt selected" data-shape="rounded" onclick="selectCEShape(this)">
+        <svg width="48" height="28" viewBox="0 0 48 28">
+          <rect x="2" y="2" width="44" height="24" rx="7" fill="#ffffff" stroke="#7b8cbc" stroke-width="1.8"/>
+        </svg>
+        <span>Rounded</span>
+      </div>
+      <div class="ce-shape-opt" data-shape="rect" onclick="selectCEShape(this)">
+        <svg width="48" height="28" viewBox="0 0 48 28">
+          <rect x="2" y="2" width="44" height="24" rx="0" fill="#ffffff" stroke="#7b8cbc" stroke-width="1.8"/>
+        </svg>
+        <span>Rectangle</span>
+      </div>
+      <div class="ce-shape-opt" data-shape="circle" onclick="selectCEShape(this)">
+        <svg width="48" height="28" viewBox="0 0 48 28">
+          <ellipse cx="24" cy="14" rx="22" ry="12" fill="#ffffff" stroke="#7b8cbc" stroke-width="1.8"/>
+        </svg>
+        <span>Ellipse</span>
+      </div>
+    </div>
+    <div class="ce-modal-btns">
+      <button class="ce-modal-btn cancel" onclick="hideCEAddNodeModal()">Cancel</button>
+      <button class="ce-modal-btn primary" onclick="confirmCEAddNode()">Add</button>
+    </div>
+  </div>
 </div>
 
 <!-- Detail panel -->
@@ -1367,6 +2519,225 @@ NODES.forEach(n => nMap[n.id] = n);
 const pos = {};
 NODES.forEach(n => { pos[n.id] = { x: n.x, y: n.y }; });
 
+// ════════════════════════════════════════════════════
+// TAB STATE  (left-sidebar views, per-view positions)
+// ════════════════════════════════════════════════════
+
+let currentTabIdx = 0;
+
+function _deepCopyPos(src) {
+  const out = {};
+  Object.keys(src).forEach(id => { out[id] = { x: src[id].x, y: src[id].y }; });
+  return out;
+}
+
+let tabStates = (function() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('fcv_tab_states') || 'null');
+    if (saved && Array.isArray(saved) && saved.length) {
+      return saved.map(s => ({
+        name: s.name || 'View',
+        pos:  s.pos  || {},
+        deletedSharedIds: new Set(s.deletedSharedIds || []),
+      }));
+    }
+  } catch(e) {}
+  const initPos = _deepCopyPos(pos);
+  return [
+    { name: 'Main View', pos: _deepCopyPos(initPos), deletedSharedIds: new Set() },
+    { name: 'By Team',   pos: _deepCopyPos(initPos), deletedSharedIds: new Set() },
+    { name: 'By Theme',  pos: _deepCopyPos(initPos), deletedSharedIds: new Set() },
+  ];
+})();
+
+function saveTabStates() {
+  try {
+    const toSave = tabStates.map(s => ({
+      name: s.name,
+      pos:  s.pos,
+      deletedSharedIds: [...s.deletedSharedIds],
+    }));
+    localStorage.setItem('fcv_tab_states', JSON.stringify(toSave));
+  } catch(e) {}
+}
+
+function renderTabButtons() {
+  const list = document.getElementById('tab-list');
+  if (!list) return;
+  list.innerHTML = '';
+  tabStates.forEach((ts, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'tab-btn' + (i === currentTabIdx ? ' active' : '');
+    btn.title = 'Double-click to rename';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'tab-btn-label';
+    nameSpan.textContent = ts.name;
+    btn.appendChild(nameSpan);
+    if (tabStates.length > 1) {
+      const del = document.createElement('button');
+      del.className = 'tab-btn-del';
+      del.textContent = '\u2715';
+      del.title = 'Remove this view';
+      del.addEventListener('click', e => { e.stopPropagation(); removeTab(i); });
+      btn.appendChild(del);
+    }
+    btn.addEventListener('click', () => switchTab(i));
+    btn.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      const newName = prompt('Rename view:', ts.name);
+      if (newName && newName.trim()) {
+        ts.name = newName.trim();
+        renderTabButtons();
+        saveTabStates();
+      }
+    });
+    list.appendChild(btn);
+  });
+}
+
+function switchTab(newIdx) {
+  if (newIdx === currentTabIdx && tabStates[newIdx]) return;
+  if (tabStates[currentTabIdx]) {
+    const curState = tabStates[currentTabIdx];
+    Object.keys(pos).forEach(id => { curState.pos[id] = { x: pos[id].x, y: pos[id].y }; });
+  }
+  currentTabIdx = newIdx;
+  const newState = tabStates[currentTabIdx];
+  [...NODES, ...userCreatedNodes].forEach(n => {
+    const saved = newState.pos[n.id];
+    if (saved) {
+      pos[n.id] = { x: saved.x, y: saved.y };
+      if (nodeEls[n.id]) nodeEls[n.id].setAttribute('transform', `translate(${saved.x},${saved.y})`);
+    }
+  });
+  NODES.forEach(n => {
+    if (!nodeEls[n.id]) return;
+    nodeEls[n.id].style.display = newState.deletedSharedIds.has(n.id) ? 'none' : '';
+  });
+  userCreatedNodes.forEach(n => {
+    if (!nodeEls[n.id]) return;
+    nodeEls[n.id].style.display = (n._tabIdx === currentTabIdx) ? '' : 'none';
+  });
+  Object.entries(edgePaths).forEach(([key, path]) => {
+    const [aId, bId] = key.split('->');
+    const aHid = nodeEls[aId] && nodeEls[aId].style.display === 'none';
+    const bHid = nodeEls[bId] && nodeEls[bId].style.display === 'none';
+    if (!aHid && !bHid) path.setAttribute('d', edgeD(aId, bId));
+    path.style.display = (aHid || bHid) ? 'none' : '';
+  });
+  userConnections.forEach(c => {
+    const visible = (c._tabIdx == null || c._tabIdx === currentTabIdx);
+    const d = visible ? '' : 'none';
+    if (c._el)         c._el.style.display         = d;
+    if (c._hitEl)      c._hitEl.style.display      = d;
+    if (c._labelEl)    c._labelEl.style.display    = d;
+    if (c._labelHitEl) c._labelHitEl.style.display = d;
+    if (c._barEl)      c._barEl.style.display      = d;
+    if (c._glowEl)     c._glowEl.style.display     = d;
+  });
+  refreshAllUserConns();
+  userGroups.forEach(grp => {
+    const visible = (grp._tabIdx == null || grp._tabIdx === currentTabIdx);
+    const d = visible ? '' : 'none';
+    if (grp._pathEl)    grp._pathEl.style.display    = d;
+    if (grp._txt)       grp._txt.style.display       = d;
+    if (grp._rect)      grp._rect.style.display      = d;
+    if (grp._handleEls) grp._handleEls.forEach(h => h.style.display = d);
+  });
+  closePanel();
+  clearMultiSel();
+  applyFilters();
+  renderTabButtons();
+  saveTabStates();
+}
+
+function addTab() {
+  if (tabStates[currentTabIdx]) {
+    const curState = tabStates[currentTabIdx];
+    Object.keys(pos).forEach(id => { curState.pos[id] = { x: pos[id].x, y: pos[id].y }; });
+  }
+  const newPos = _deepCopyPos(pos);
+  tabStates.push({ name: 'View ' + (tabStates.length + 1), pos: newPos, deletedSharedIds: new Set() });
+  currentTabIdx = -1;
+  switchTab(tabStates.length - 1);
+}
+
+function removeTab(idx) {
+  if (tabStates.length <= 1) return;
+  if (!confirm('Remove this view? Bubbles added only here will be lost.')) return;
+  const toRemove = userCreatedNodes.filter(n => n._tabIdx === idx);
+  toRemove.forEach(n => {
+    if (nodeEls[n.id]) nodeEls[n.id].remove();
+    delete nodeEls[n.id]; delete nMap[n.id]; delete pos[n.id];
+    (nodeToEdges[n.id] || []).forEach(key => {
+      if (edgePaths[key]) edgePaths[key].remove();
+      delete edgePaths[key];
+    });
+    delete nodeToEdges[n.id];
+    userCreatedNodes.splice(userCreatedNodes.indexOf(n), 1);
+  });
+  for (let i = userConnections.length - 1; i >= 0; i--) {
+    const c = userConnections[i];
+    if (c._tabIdx === idx) {
+      if (c._el)         c._el.remove();
+      if (c._hitEl)      c._hitEl.remove();
+      if (c._labelEl)    c._labelEl.remove();
+      if (c._labelHitEl) c._labelHitEl.remove();
+      if (c._barEl)      c._barEl.remove();
+      if (c._glowEl)     c._glowEl.remove();
+      userConnections.splice(i, 1);
+    }
+  }
+  userCreatedNodes.forEach(n => { if (n._tabIdx > idx) n._tabIdx--; });
+  userConnections.forEach(c => { if (c._tabIdx > idx) c._tabIdx--; });
+  userGroups.forEach(g => { if (g._tabIdx != null && g._tabIdx > idx) g._tabIdx--; });
+  tabStates.splice(idx, 1);
+  const newIdx = Math.min(idx, tabStates.length - 1);
+  currentTabIdx = -1;
+  switchTab(newIdx);
+}
+
+// ── Sidebar resize drag ────────────────────────────
+(function initSbResize() {
+  const MIN_W = 90, MAX_W = 380;
+  // Restore saved width
+  try {
+    const saved = parseInt(localStorage.getItem('fcv_sb_w'), 10);
+    if (saved >= MIN_W && saved <= MAX_W) {
+      document.documentElement.style.setProperty('--sb-w', saved + 'px');
+    }
+  } catch(e) {}
+
+  let dragging = false;
+
+  document.addEventListener('mousedown', e => {
+    if (e.target.id !== 'sb-drag-handle') return;
+    dragging = true;
+    document.body.classList.add('sb-resizing');
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'ew-resize';
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const w = Math.max(MIN_W, Math.min(MAX_W, e.clientX));
+    document.documentElement.style.setProperty('--sb-w', w + 'px');
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.classList.remove('sb-resizing');
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+    try {
+      const w = getComputedStyle(document.documentElement)
+        .getPropertyValue('--sb-w').trim();
+      localStorage.setItem('fcv_sb_w', parseInt(w, 10));
+    } catch(e) {}
+  });
+})();
+
 const svgNS = "http://www.w3.org/2000/svg";
 const g = document.getElementById('g');
 
@@ -1965,9 +3336,35 @@ function deleteCurrentNode() {
   const node = _selfAssignNode;
   if (!node) return;
   const label = Array.isArray(node.label) ? node.label.join(' ') : node.label;
-  if (!confirm(`Delete "${label}"?\n\nThis will also remove all connections to this bubble.`)) return;
 
   const id = node.id;
+
+  // Shared node: hide from this view only
+  if (!node._user) {
+    if (!confirm(`Remove "${label}" from this view?\n\nIt will still appear in other views.`)) return;
+    tabStates[currentTabIdx].deletedSharedIds.add(id);
+    if (nodeEls[id]) nodeEls[id].style.display = 'none';
+    (nodeToEdges[id] || []).forEach(key => {
+      if (edgePaths[key]) edgePaths[key].style.display = 'none';
+    });
+    userConnections.forEach(c => {
+      if (c.fromId === id || c.toId === id) {
+        const d = 'none';
+        if (c._el)         c._el.style.display         = d;
+        if (c._hitEl)      c._hitEl.style.display      = d;
+        if (c._labelEl)    c._labelEl.style.display    = d;
+        if (c._labelHitEl) c._labelHitEl.style.display = d;
+        if (c._barEl)      c._barEl.style.display      = d;
+        if (c._glowEl)     c._glowEl.style.display     = d;
+      }
+    });
+    closePanel();
+    saveTabStates();
+    return;
+  }
+
+  // Local (user-created) node: permanently remove
+  if (!confirm(`Delete "${label}"?\n\nThis will also remove all connections to this bubble.`)) return;
 
   // Remove all static edges touching this node
   (nodeToEdges[id] || []).forEach(key => {
@@ -2589,6 +3986,14 @@ function svgPoint(e) {
 const userCreatedNodes = [];
 
 function allNodesList() {
+  const deleted = tabStates && tabStates[currentTabIdx]
+    ? tabStates[currentTabIdx].deletedSharedIds : new Set();
+  const visShared = NODES.filter(n => !deleted.has(n.id));
+  const visLocal  = userCreatedNodes.filter(n => n._tabIdx === currentTabIdx);
+  return [...visShared, ...visLocal];
+}
+
+function allNodesListUnfiltered() {
   return [...NODES, ...userCreatedNodes];
 }
 
@@ -2727,6 +4132,7 @@ function finishConn(toNode, pt) {
     fromDir: drawingConn.fromAnchor.dir,
     toDir:   toAnchor.dir,
     style:   arrowStyle,
+    _tabIdx: currentTabIdx,
   };
   userConnections.push(conn);
   renderUserConn(conn);
@@ -3552,7 +4958,7 @@ function confirmGroup() {
   document.getElementById('group-modal').style.display = 'none';
   if (pendingGroup.previewEl) pendingGroup.previewEl.remove();
   const col = GROUP_PALETTES[pendingGroupColorIdx];
-  const grp = { ...pendingGroup, id: 'grp' + (++userGroupIdSeq), label, col };
+  const grp = { ...pendingGroup, id: 'grp' + (++userGroupIdSeq), label, col, _tabIdx: currentTabIdx };
   userGroups.push(grp);
   renderGroup(grp);
   pendingGroup = null;
@@ -3815,7 +5221,7 @@ function confirmAddNode() {
   const id   = 'un' + (++userNodeIdSeq);
   const node = {
     id, label: rawLabel, x: cx, y: cy, type, w: ww, h: hh,
-    people: selectedPeople, users: [], desc: '', _user: true,
+    people: selectedPeople, users: [], desc: '', _user: true, _tabIdx: currentTabIdx,
   };
   userCreatedNodes.push(node);
   nMap[id]        = node;
@@ -4410,7 +5816,7 @@ function saveToSupabase() {
   if (!_SB_URL || !_SB_KEY) return;
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => {
-    const allNodes = allNodesList().map(n => ({
+    const allNodes = allNodesListUnfiltered().map(n => ({
       id:    n.id,
       label: n.label,
       x:     (pos[n.id] || n).x,
@@ -4458,6 +5864,9 @@ function saveToSupabase() {
   }, 1200);
 }
 
+// Initialise tab sidebar buttons
+renderTabButtons();
+
 // Restore user-drawn connections that were saved in a previous session.
 (function restoreUserConns() {
   const saved = _savedUserConns;
@@ -4502,6 +5911,1005 @@ function saveToSupabase() {
   if (typeof toggleExportMenu !== 'undefined') window.toggleExportMenu = toggleExportMenu;
   if (typeof toggleLasso !== 'undefined') window.toggleLasso = toggleLasso;
 });  // end _loadData().then
+
+// ══════════════════════════════════════════════════════════════════════════════
+// COUNTRY ENGAGEMENT CYCLE VIEW
+// ══════════════════════════════════════════════════════════════════════════════
+
+const CE_NODES = {
+  scd: {
+    label: 'SCD — Strategic Country Diagnostic',
+    type: 'Diagnostic Tool',
+    phase: 'Identification',
+    desc: [
+      'The Strategic Country Diagnostic (SCD) is a comprehensive, evidence-based country analysis prepared by the World Bank Group. It identifies the most critical constraints and opportunities for reducing poverty and boosting shared prosperity, drawing on data, stakeholder consultations, and analytical work across sectors.',
+      'The SCD underpins the Country Partnership Framework by providing the analytical foundation for prioritizing areas of WBG engagement. It is typically updated every five years or when a new CPF is being prepared, and is publicly disclosed.',
+      'In FCV contexts, the SCD incorporates fragility, conflict, and violence (FCV) diagnostics to understand root causes of instability and how development interventions can strengthen resilience.'
+    ]
+  },
+  cpf: {
+    label: 'CPF — Country Partnership Framework',
+    type: 'Strategic Framework',
+    phase: 'Programming',
+    desc: [
+      'The Country Partnership Framework (CPF) is the primary multi-year strategic document guiding World Bank Group engagement in a country, typically spanning five years. It translates SCD findings into a focused set of high-level outcomes and defines the WBG\'s areas of engagement in alignment with the country\'s national development priorities.',
+      'The CPF is jointly prepared by IDA/IBRD, IFC, and MIGA, and reviewed annually through a Performance and Learning Review (PLR). At the end of the CPF period, a Completion and Learning Review (CLR) assesses results and lessons learned.',
+      'CPF outcomes are linked to Corporate Scorecard Indicators that enable systematic tracking and reporting at the corporate level. Each CPF typically includes 3–5 high-level outcomes.'
+    ]
+  },
+  abp: {
+    label: 'Annual Business Plan Review',
+    type: 'Adaptive Management Process',
+    phase: 'Adaptive Strategic Management',
+    desc: [
+      'The Annual Business Plan Review is a key adaptive management mechanism through which the WBG updates its planned portfolio of operations for the coming fiscal year. It ensures that the portfolio remains aligned with both the CPF strategic objectives and the evolving country context.',
+      'The review process confirms which projects, programs, and Advisory Services and Analytics (ASA) to prepare and deliver, setting priorities and sequencing based on country readiness, resource availability, and strategic relevance.',
+      'In fragile and conflict-affected states (FCS), the Annual Business Plan Review is especially critical, as country conditions can shift rapidly and require frequent portfolio adjustments to maintain relevance and effectiveness.'
+    ]
+  },
+  outcome: {
+    label: 'CPF Outcome',
+    type: 'Strategic Objective',
+    phase: 'Programming',
+    desc: [
+      'CPF Outcomes are the high-level results the WBG-country partnership aims to achieve over the CPF period. They define what success looks like and serve as the cornerstone of the CPF results framework.',
+      'Each outcome is linked to one or more Corporate Scorecard Indicators, enabling progress tracking at both the country and corporate levels. Outcomes span the WBG\'s focus areas — such as governance, private sector development, human capital, or infrastructure — and reflect the theory of change connecting WBG interventions to country-level development goals.',
+      'Progress toward outcomes is monitored annually through the PLR process. If country conditions shift significantly, the CPF can be restructured to adjust outcomes mid-period.'
+    ]
+  },
+  scorecard: {
+    label: 'Corporate Scorecard Indicators',
+    type: 'Measurement Framework',
+    phase: 'Programming',
+    desc: [
+      'Corporate Scorecard Indicators are standardized metrics defined at the WBG corporate level that link individual country CPF outcomes to the institution\'s global performance framework.',
+      'These indicators enable aggregation across countries, allowing the WBG to track and report on its development impact at a global scale. They are monitored annually and reported in the WBG\'s Corporate Scorecard, which is presented to the Board of Directors.',
+      'In FCV countries, specific FCV-sensitive indicators — such as progress on state capacity, social cohesion, or resilience — may be included to capture the nuanced nature of development outcomes in fragile settings.'
+    ]
+  },
+  pasa: {
+    label: 'PASA — Program-for-Results',
+    type: 'Financing Instrument',
+    phase: 'Implementation',
+    desc: [
+      'The Program-for-Results (PforR) financing instrument — sometimes referred to as PASA — disburses WBG funds based on the achievement of defined program results and performance indicators rather than inputs or expenditures.',
+      'PforR supports government-owned programs and strengthens the systems through which governments deliver services. It is particularly effective for systems-level change where improving delivery mechanisms is as important as generating discrete outputs.',
+      'PforR operations include safeguards through an Integrated Risk Assessment and social and environmental systems assessments. They are used across sectors including education, health, agriculture, water, and public sector governance.'
+    ]
+  },
+  project: {
+    label: 'Project — Investment Project Financing',
+    type: 'Financing Operation',
+    phase: 'Implementation',
+    desc: [
+      'Investment Project Financing (IPF) operations are the WBG\'s primary lending instrument, providing funds for specific development objectives through financing goods, works, non-consulting and consulting services, and capacity building.',
+      'Projects under the CPF are designed to contribute directly to CPF outcomes and are tracked through individual results frameworks. Project financing ranges from small technical assistance grants to large infrastructure programs, spanning sectors including transport, energy, health, education, social protection, and urban development.',
+      'IPF projects are implemented over a defined period (typically 3–7 years) and supervised by WBG task teams who monitor progress, resolve implementation bottlenecks, and ensure fiduciary and safeguard compliance.'
+    ]
+  },
+  pipeline: {
+    label: 'Pipeline Operation',
+    type: 'Planned Operation',
+    phase: 'Implementation',
+    desc: [
+      'Pipeline operations are financing operations or Advisory Services and Analytics (ASA) that are in the preparation stage and planned for delivery in the next one to three fiscal years.',
+      'The pipeline is identified through the Annual Business Plan process and reflects the forward-looking portfolio strategy under the CPF. Pipeline operations are sequenced to build on lessons from existing operations, respond to emerging country needs, and align with government priorities and WBG corporate commitments.',
+      'In FCS countries, pipeline management requires flexibility — operations may be accelerated in response to crises or delayed due to security and political constraints. Scenario planning and contingency pipelines are often maintained to allow rapid response.'
+    ]
+  },
+  advisory: {
+    label: 'Advisory Services & Analytics (ASA)',
+    type: 'Non-Lending Service',
+    phase: 'Implementation',
+    desc: [
+      'Advisory Services and Analytics (ASA) encompass a broad range of non-lending knowledge and technical assistance activities that complement WBG lending operations. These include economic and sector work, technical assistance, capacity building, and data and analytics products.',
+      'ASA informs policy dialogue, shapes the design of the lending program, and supports government counterparts in building the institutional capacity needed to implement reforms and sustain development gains.',
+      'In FCS contexts, ASA often plays a critical upstream role — generating the analytical foundations for engagement in environments where large-scale lending may not yet be feasible. This includes conflict analysis, political economy assessments, and resilience diagnostics.'
+    ]
+  },
+  wbg: {
+    label: 'IDA-IBRD | IFC | MIGA',
+    type: 'WBG Institutions',
+    phase: 'All Phases',
+    desc: [
+      'The World Bank Group (WBG) consists of five closely associated institutions that collectively work to reduce poverty and promote shared prosperity. In the context of the Country Engagement Cycle, three institutions are central:',
+      'IDA (International Development Association) and IBRD (International Bank for Reconstruction and Development) together form the World Bank. IDA provides grants and highly concessional loans to the world\'s poorest countries, while IBRD offers loans and development assistance to middle-income and creditworthy lower-income countries.',
+      'IFC (International Finance Corporation) is the largest global development institution focused exclusively on the private sector, providing investment, advice, and asset management services to encourage private enterprise in developing countries.',
+      'MIGA (Multilateral Investment Guarantee Agency) promotes foreign direct investment by providing political risk insurance and credit enhancement guarantees to investors and lenders in developing countries.'
+    ]
+  }
+};
+
+function openCECycle() {
+  document.getElementById('ce-overlay').classList.add('open');
+  document.getElementById('ce-cycle-btn').classList.add('active');
+}
+
+function closeCECycle() {
+  closeCEPanel();
+  document.getElementById('ce-overlay').classList.remove('open');
+  document.getElementById('ce-cycle-btn').classList.remove('active');
+}
+
+function openCEPanel(nodeId) {
+  const node = CE_NODES[nodeId];
+  if (!node) return;
+  document.getElementById('ce-panel-type').textContent = node.type;
+  document.getElementById('ce-panel-title').textContent = node.label;
+  const body = document.getElementById('ce-panel-body');
+  const descs = Array.isArray(node.desc) ? node.desc : [node.desc];
+  body.innerHTML = descs.map(p => `<p>${p}</p>`).join('') +
+    `<div id="ce-panel-phase"><strong>Process Phase</strong>${node.phase}</div>`;
+  document.getElementById('ce-detail-panel').classList.add('open');
+}
+
+function closeCEPanel() {
+  document.getElementById('ce-detail-panel').classList.remove('open');
+}
+
+// Close CE panel when clicking outside it within the overlay
+document.getElementById('ce-svg-wrap').addEventListener('click', function(e) {
+  if (!e.target.closest('.ce-node, .ce-ellipse-node, .ce-text-node')) {
+    closeCEPanel();
+  }
+});
+
+// Keyboard accessibility for CE nodes
+document.querySelectorAll('.ce-node, .ce-ellipse-node, .ce-text-node').forEach(el => {
+  el.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); }
+  });
+});
+
+window.openCECycle  = openCECycle;
+window.closeCECycle = closeCECycle;
+window.openCEPanel  = openCEPanel;
+window.closeCEPanel = closeCEPanel;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CE CYCLE – FCV CONTEXT VIEW  (Slide 17)
+// ══════════════════════════════════════════════════════════════════════════════
+
+const CE17_EXTRA_NODES = {
+  // ── Overrides for shared CE_NODES — keeps regular CE Cycle tab untouched ──
+  scd:       { label: 'SCD — Strategic Country Diagnostic',        type: 'Diagnostic Tool',              phase: 'Identification',               desc: 'xxxxx' },
+  cpf:       { label: 'CPF — Country Partnership Framework',       type: 'Strategic Framework',          phase: 'Programming',                  desc: 'xxxxx' },
+  abp:       { label: 'Annual Business Plan Review',               type: 'Adaptive Management Process',  phase: 'Adaptive Strategic Management', desc: 'xxxxx' },
+  outcome:   { label: 'CPF Outcome',                               type: 'Strategic Objective',          phase: 'Programming',                  desc: 'xxxxx' },
+  scorecard: { label: 'Corporate Scorecard Indicators',            type: 'Measurement Framework',        phase: 'Programming',                  desc: 'xxxxx' },
+  pasa:      { label: 'PASA — Program-for-Results',                type: 'Financing Instrument',         phase: 'Implementation',               desc: 'xxxxx' },
+  project:   { label: 'Project — Investment Project Financing',    type: 'Financing Operation',          phase: 'Implementation',               desc: 'xxxxx' },
+  pipeline:  { label: 'Pipeline Operation',                        type: 'Planned Operation',            phase: 'Implementation',               desc: 'xxxxx' },
+  advisory:  { label: 'Advisory Services & Analytics (ASA)',       type: 'Non-Lending Service',          phase: 'Implementation',               desc: 'xxxxx' },
+  wbg:       { label: 'IDA-IBRD | IFC | MIGA',                    type: 'WBG Institutions',             phase: 'All Phases',                   desc: 'xxxxx' },
+
+  // ── FCV-specific nodes ──
+  rra: {
+    label: 'RRA — Risk and Resilience Assessment',
+    type: 'FCV Diagnostic Tool  ①',
+    phase: 'Identification',
+    desc: 'xxxxx'
+  },
+  fcve: {
+    label: 'IDA Financing for FCS',
+    type: 'FCV Financing Windows  ③',
+    phase: 'Identification → Programming',
+    desc: 'IDA offers specialized financing windows for FCS countries — the FCV Envelope (FCVE), the Window for Host Communities and Refugees (WHR), and the Private Sector Window (PSW) — providing additional grant resources and risk-mitigation instruments beyond regular country allocations.',
+    projects: ['fcv_schema']
+  },
+  rra_updates: {
+    label: '⑥: RRA Updates',
+    type: 'Adaptive Management Link  ⑥',
+    phase: 'Adaptive Strategic Management',
+    desc: 'In FCS contexts, the RRA is periodically updated and feeds directly into the Annual Business Plan Review — ensuring that evolving fragility and conflict dynamics are reflected in portfolio decisions.'
+  },
+  callout1: {
+    label: '①: RRA',
+    type: 'What\'s Different in FCV',
+    phase: 'Identification',
+    desc: 'Identifies the main FCV-related risks that will shape the country\'s CPF and portfolio design.',
+    projects: ['rra_2', 'pol_econ', 'kps_k360']
+  },
+  callout2: {
+    label: '②: FCV-Responsive Programming',
+    type: 'What\'s Different in FCV',
+    phase: 'Programming',
+    desc: 'At least some outcomes and projects are designed to actively contribute to lowering FCV risks — not just achieve sectoral goals.',
+    projects: ['hoover', 'risk_scans', 'conflict_intel', 'corp_security', 'llms', 'llms_kps', 'kps_k360', 'action_labs', 'research', 'gaza_reconstruction']
+  },
+  callout4: {
+    label: '④: FCV-Sensitive Programming',
+    type: 'What\'s Different in FCV',
+    phase: 'Implementation',
+    desc: 'All projects must be designed and supervised so they do not inadvertently increase FCV risks — and where possible, actively mitigate them during implementation.',
+    projects: ['geo_planning', 'dpf_rra_geo', 'llms']
+  },
+  callout5: {
+    label: '⑤: Implementation and Adaptive Tactical Management',
+    type: 'What\'s Different in FCV',
+    phase: 'Implementation',
+    desc: 'FCS contexts require improved ongoing FCV-risk monitoring, remote monitoring capabilities, and strengthened security management protocols throughout implementation.',
+    projects: ['geo_data_hubs', 'risk_monitor', 'integrated_planning', 'corp_security']
+  }
+};
+
+// Resolve a node ID — check FCV-extra first, then shared CE_NODES
+function _getCE17Node(id) {
+  return CE17_EXTRA_NODES[id] || CE_NODES[id] || null;
+}
+
+function openCE17Cycle() {
+  closeCE17Panel();
+  document.getElementById('ce17-overlay').classList.add('open');
+  document.getElementById('ce17-cycle-btn').classList.add('active');
+}
+
+function closeCE17Cycle() {
+  closeCE17Panel();
+  document.getElementById('ce17-overlay').classList.remove('open');
+  document.getElementById('ce17-cycle-btn').classList.remove('active');
+}
+
+let _ce17ActiveCategoryId = null;
+
+function openCE17Panel(nodeId) {
+  const node = _getCE17Node(nodeId);
+  if (!node) return;
+  _ce17ActiveCategoryId = nodeId;
+  _ce17RenderCategory(node);
+  document.getElementById('ce17-detail-panel').classList.add('open');
+}
+
+function _ce17RenderCategory(node) {
+  document.getElementById('ce17-panel-type').textContent = node.type;
+  const titleEl = document.getElementById('ce17-panel-title');
+  titleEl.textContent = node.label;
+  titleEl.contentEditable = 'true';
+  titleEl.oninput = () => { node.label = titleEl.textContent; };
+  document.getElementById('ce17-panel-back').style.display = 'none';
+
+  const descs = Array.isArray(node.desc) ? node.desc : [node.desc];
+  let html = descs.map(p => `<p>${p}</p>`).join('');
+  html += `<div id="ce17-panel-phase"><strong>Process Phase</strong>${node.phase}</div>`;
+
+  if (node.projects && node.projects.length) {
+    const allNodes = (typeof NODES !== 'undefined' && NODES) ? NODES : _DEF_NODES;
+    const projNodes = node.projects.map(id => allNodes.find(n => n.id === id)).filter(Boolean);
+    if (projNodes.length) {
+      html += `<div class="ce17-projects-section">
+        <div class="ce17-projects-label">What we're working on</div>`;
+      projNodes.forEach(proj => {
+        const title = Array.isArray(proj.label) ? proj.label.join(' ') : proj.label;
+        const tm = (typeof TEAMMATES !== 'undefined' && TEAMMATES) ? TEAMMATES : _DEF_TEAMMATES;
+        const peopleBadges = (proj.people || []).map(p => {
+          const c = tm[p.name] || { dot: '#999', bg: '#f0f0f0', border: '#ddd' };
+          return `<span class="ce17-proj-badge" style="background:${c.bg};border-color:${c.border};color:${c.dot}">
+            <span class="ce17-proj-badge-dot" style="background:${c.dot}"></span>${p.name}
+          </span>`;
+        }).join('');
+        html += `<div class="ce17-proj-card" data-projid="${proj.id}">
+          <div class="ce17-proj-title">${title}</div>
+          ${peopleBadges ? `<div class="ce17-proj-people">${peopleBadges}</div>` : ''}
+        </div>`;
+      });
+      html += `</div>`;
+    }
+  }
+
+  document.getElementById('ce17-panel-body').innerHTML = html;
+
+  // Attach click handlers to project cards
+  document.querySelectorAll('#ce17-panel-body .ce17-proj-card').forEach(card => {
+    card.addEventListener('click', () => _ce17OpenProjectDetail(card.dataset.projid));
+  });
+}
+
+function _ce17OpenProjectDetail(projId) {
+  const allNodes = (typeof NODES !== 'undefined' && NODES) ? NODES : _DEF_NODES;
+  const proj = allNodes.find(n => n.id === projId);
+  if (!proj) return;
+
+  const typeLabels = {
+    project:  '📋 Current Project',
+    research: '🔬 Research Agenda',
+    sub:      '🔧 Future Project',
+    goal:     '🎯 FCV Outcome',
+  };
+  document.getElementById('ce17-panel-type').textContent = typeLabels[proj.type] || proj.type || '';
+
+  const titleEl = document.getElementById('ce17-panel-title');
+  const title = Array.isArray(proj.label) ? proj.label.join(' ') : proj.label;
+  titleEl.textContent = title;
+  titleEl.contentEditable = 'false';
+  titleEl.oninput = null;
+
+  document.getElementById('ce17-panel-back').style.display = 'block';
+
+  const tm = (typeof TEAMMATES !== 'undefined' && TEAMMATES) ? TEAMMATES : _DEF_TEAMMATES;
+  const ut = (typeof USER_TYPES !== 'undefined' && USER_TYPES) ? USER_TYPES : _DEF_USER_TYPES;
+
+  let html = `<p class="ce17-proj-detail-desc">${proj.desc || ''}</p>`;
+
+  if (proj.people && proj.people.length) {
+    const badges = proj.people.map(p => {
+      const c = tm[p.name] || { dot: '#999', bg: '#f0f0f0', border: '#ddd' };
+      const statusLabel = p.status === 'will_be' ? ' · will join' : p.status === 'want_to_be' ? ' · wants to join' : '';
+      const dotStyle = p.status === 'want_to_be'
+        ? `background:none;border:1.5px dotted ${c.dot};width:7px;height:7px`
+        : p.status === 'will_be'
+        ? `background:none;border:1.5px solid ${c.dot};width:7px;height:7px`
+        : `background:${c.dot}`;
+      return `<span class="ce17-proj-badge" style="background:${c.bg};border-color:${c.border};color:${c.dot}">
+        <span class="ce17-proj-badge-dot" style="${dotStyle}"></span>${p.name}<span style="opacity:0.6;font-size:10px">${statusLabel}</span>
+      </span>`;
+    }).join('');
+    html += `<div class="ce17-proj-detail-section">
+      <div class="ce17-proj-detail-section-label">Team</div>
+      <div class="ce17-proj-detail-badges">${badges}</div>
+    </div>`;
+  }
+
+  if (proj.users && proj.users.length) {
+    const badges = proj.users.map(uName => {
+      const u = ut[uName] || { color: '#999' };
+      return `<span class="ce17-proj-badge" style="background:${u.color}18;border-color:${u.color}70;color:${u.color}">
+        <span class="ce17-proj-badge-dot" style="background:${u.color}"></span>${uName}
+      </span>`;
+    }).join('');
+    html += `<div class="ce17-proj-detail-section">
+      <div class="ce17-proj-detail-section-label">Used by</div>
+      <div class="ce17-proj-detail-badges">${badges}</div>
+    </div>`;
+  }
+
+  document.getElementById('ce17-panel-body').innerHTML = html;
+}
+
+function ce17BackToCategory() {
+  if (!_ce17ActiveCategoryId) return;
+  const node = _getCE17Node(_ce17ActiveCategoryId);
+  if (node) _ce17RenderCategory(node);
+}
+
+function closeCE17Panel() {
+  document.getElementById('ce17-detail-panel').classList.remove('open');
+  _ce17ActiveCategoryId = null;
+}
+
+// Close panel when clicking blank canvas area
+document.getElementById('ce17-svg-wrap').addEventListener('click', function(e) {
+  if (!e.target.closest('.ce-node, .ce-ellipse-node, .ce-text-node')) {
+    closeCE17Panel();
+  }
+});
+
+// Keyboard accessibility
+document.querySelectorAll('#ce17-svg .ce-node, #ce17-svg .ce-ellipse-node, #ce17-svg .ce-text-node')
+  .forEach(el => {
+    el.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); }
+    });
+  });
+
+window.openCE17Cycle   = openCE17Cycle;
+window.closeCE17Cycle  = closeCE17Cycle;
+window.openCE17Panel   = openCE17Panel;
+window.closeCE17Panel  = closeCE17Panel;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SHARED PAN / ZOOM  —  works on any SVG with a viewBox
+// Manipulates the viewBox attribute so no SVG restructuring is needed.
+// ══════════════════════════════════════════════════════════════════════════════
+
+function initCEPanZoom(svgId, origVbW, origVbH) {
+  const svg = document.getElementById(svgId);
+  if (!svg) return { zoomIn(){}, zoomOut(){}, reset(){} };
+
+  let vbX = 0, vbY = 0, vbW = origVbW, vbH = origVbH;
+  const AR = origVbH / origVbW; // aspect ratio — kept constant during zoom
+
+  function applyVB() {
+    svg.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
+  }
+
+  svg.style.cursor = 'grab';
+  svg.style.userSelect = 'none';
+
+  // ── Wheel zoom (toward cursor) ──────────────────────────────────────────────
+  svg.addEventListener('wheel', e => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 0.88 : 1.14;
+    const newVbW = Math.min(origVbW * 4, Math.max(origVbW * 0.12, vbW * factor));
+    const newVbH = newVbW * AR;
+
+    const rect  = svg.getBoundingClientRect();
+    if (!rect.width) return;
+    const fx = (e.clientX - rect.left) / rect.width;
+    const fy = (e.clientY - rect.top)  / rect.height;
+
+    // Keep the SVG point under the cursor fixed
+    const svgPtX = vbX + fx * vbW;
+    const svgPtY = vbY + fy * vbH;
+    vbX = svgPtX - fx * newVbW;
+    vbY = svgPtY - fy * newVbH;
+    vbW = newVbW;
+    vbH = newVbH;
+    applyVB();
+  }, { passive: false });
+
+  // ── Mouse pan ───────────────────────────────────────────────────────────────
+  let dragging = false, dragStartX, dragStartY, dragVbX, dragVbY;
+
+  svg.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    // Don't start pan on interactive elements
+    if (e.target.closest && e.target.closest('.ce-node, .ce-ellipse-node, .ce-text-node, .ce-user-node')) return;
+    dragging  = true;
+    dragStartX = e.clientX; dragStartY = e.clientY;
+    dragVbX    = vbX;       dragVbY    = vbY;
+    svg.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+
+  function onMove(e) {
+    if (!dragging) return;
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width) return;
+    vbX = dragVbX - (e.clientX - dragStartX) / rect.width  * vbW;
+    vbY = dragVbY - (e.clientY - dragStartY) / rect.height * vbH;
+    applyVB();
+  }
+
+  function onUp() {
+    if (dragging) { dragging = false; svg.style.cursor = 'grab'; }
+  }
+
+  // Attach to window so drag works when cursor leaves SVG
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup',   onUp);
+
+  // ── Touch: single-finger pan + two-finger pinch zoom ───────────────────────
+  let touchPanStart = null;
+  let pinchDist0    = null, pinchVbW0, pinchVbH0, pinchVbX0, pinchVbY0;
+
+  svg.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) {
+      touchPanStart = { cx: e.touches[0].clientX, cy: e.touches[0].clientY, vbX, vbY };
+    } else if (e.touches.length === 2) {
+      touchPanStart = null;
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      pinchDist0 = Math.hypot(dx, dy);
+      pinchVbW0 = vbW; pinchVbH0 = vbH;
+      pinchVbX0 = vbX; pinchVbY0 = vbY;
+    }
+  }, { passive: true });
+
+  svg.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (e.touches.length === 1 && touchPanStart) {
+      const rect = svg.getBoundingClientRect();
+      if (!rect.width) return;
+      vbX = touchPanStart.vbX - (e.touches[0].clientX - touchPanStart.cx) / rect.width  * vbW;
+      vbY = touchPanStart.vbY - (e.touches[0].clientY - touchPanStart.cy) / rect.height * vbH;
+      applyVB();
+    } else if (e.touches.length === 2 && pinchDist0) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.hypot(dx, dy);
+      const rawScale = pinchDist0 / dist;
+      const scale = 1 + (rawScale - 1) * 0.3; // dampen: 30% of raw movement
+      const newVbW = Math.min(origVbW * 4, Math.max(origVbW * 0.12, pinchVbW0 * scale));
+      const newVbH = newVbW * AR;
+      const cx = pinchVbX0 + pinchVbW0 / 2;
+      const cy = pinchVbY0 + pinchVbH0 / 2;
+      vbX = cx - newVbW / 2; vbY = cy - newVbH / 2;
+      vbW = newVbW;          vbH = newVbH;
+      applyVB();
+    }
+  }, { passive: false });
+
+  svg.addEventListener('touchend', () => {
+    touchPanStart = null;
+    pinchDist0    = null;
+  }, { passive: true });
+
+  // ── Button controls ─────────────────────────────────────────────────────────
+  return {
+    zoomIn() {
+      const cx = vbX + vbW / 2, cy = vbY + vbH / 2;
+      vbW = Math.max(origVbW * 0.12, vbW * 0.8);
+      vbH = vbW * AR;
+      vbX = cx - vbW / 2; vbY = cy - vbH / 2;
+      applyVB();
+    },
+    zoomOut() {
+      const cx = vbX + vbW / 2, cy = vbY + vbH / 2;
+      vbW = Math.min(origVbW * 4, vbW / 0.8);
+      vbH = vbW * AR;
+      vbX = cx - vbW / 2; vbY = cy - vbH / 2;
+      applyVB();
+    },
+    reset() {
+      vbX = 0; vbY = 0; vbW = origVbW; vbH = origVbH;
+      applyVB();
+    }
+  };
+}
+
+// Initialise pan/zoom for both CE overlays (SVG elements exist in DOM from load)
+const cePZ   = initCEPanZoom('ce-svg',   960,  510);
+const ce17PZ = initCEPanZoom('ce17-svg', 1100, 560);
+
+window.cePZ   = cePZ;
+window.ce17PZ = ce17PZ;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CE OVERLAY — ADD NODE / HOVER-PLUS ARROWS  (same algorithm as main map)
+// ══════════════════════════════════════════════════════════════════════════════
+
+const CE_OV_CFG = {
+  'ce':  { svgId: 'ce-svg',   userLayerId: 'ce-user-layer',   connLayerId: 'ce-conn-layer',   previewId: 'ce-conn-preview',   markerId: 'ce-arr',   filterId: 'ce-sh'   },
+  'ce17':{ svgId: 'ce17-svg', userLayerId: 'ce17-user-layer', connLayerId: 'ce17-conn-layer', previewId: 'ce17-conn-preview', markerId: 'ce17-arr', filterId: 'ce17-sh' },
+};
+
+const ceUserNodes = [];  // { id, ovId, x, y, w, h, label, shape, _el }
+const ceUserConns = [];  // { id, ovId, fromId, toId, fromDir, toDir, style, color, _el }
+let ceUserNodeSeq = 0;
+let ceUserConnSeq = 0;
+let _ceActiveModal = null;
+let _ceDblClickPos = null;
+
+// Per-overlay arrow-draw state (mirrors main map's drawingConn / plusHoverNode)
+const ceDrawState = {
+  'ce':  { conn: null, plusHoverNid: null, plusHoverTimer: null, hlNid: null },
+  'ce17':{ conn: null, plusHoverNid: null, plusHoverTimer: null, hlNid: null },
+};
+
+// ── Coordinate helper ─────────────────────────────────────────────────────────
+
+// Uses the SVG's own CTM so preserveAspectRatio letterboxing is handled correctly.
+// This is identical to the main map's svgPoint() approach.
+function ceClientToSVG(svgEl, cx, cy) {
+  const pt = svgEl.createSVGPoint();
+  pt.x = cx; pt.y = cy;
+  return pt.matrixTransform(svgEl.getScreenCTM().inverse());
+}
+
+// ── Built-in node list: recomputed dynamically via screen-space rects ─────────
+// getBBox() can return zeros if called before layout completes.
+// getBoundingClientRect() is always accurate while the overlay is visible,
+// so we convert screen rects → SVG space via ceClientToSVG on every call.
+
+function ceAllNodes(ovId) {
+  const svg = document.getElementById(CE_OV_CFG[ovId].svgId);
+  const builtins = [];
+  if (svg) {
+    svg.querySelectorAll('[data-nid]').forEach(el => {
+      if (el.classList.contains('ce-user-node')) return; // tracked separately
+      try {
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) return;
+        const tl = ceClientToSVG(svg, r.left,  r.top);
+        const br = ceClientToSVG(svg, r.right, r.bottom);
+        builtins.push({
+          id: el.getAttribute('data-nid'),
+          x:  (tl.x + br.x) / 2,
+          y:  (tl.y + br.y) / 2,
+          w:  Math.max(Math.abs(br.x - tl.x), 24),
+          h:  Math.max(Math.abs(br.y - tl.y), 24),
+          _el: el,
+          _builtin: true,
+        });
+      } catch(err) {}
+    });
+  }
+  return [...builtins, ...ceUserNodes.filter(n => n.ovId === ovId)];
+}
+
+// ── Geometry helpers (same logic as main map) ─────────────────────────────────
+
+function ceDistToBorder(node, pt) {
+  const dx = Math.abs(pt.x - node.x), dy = Math.abs(pt.y - node.y);
+  const hw = node.w / 2, hh = node.h / 2;
+  if (dx <= hw && dy <= hh) return Math.min(hw - dx, hh - dy);
+  return Math.hypot(Math.max(0, dx - hw), Math.max(0, dy - hh));
+}
+
+function ceHitNode(node, pt) {
+  return Math.abs(pt.x - node.x) <= node.w / 2 &&
+         Math.abs(pt.y - node.y) <= node.h / 2;
+}
+
+function ceAnchor(node, dir) {
+  const hw = node.w / 2, hh = node.h / 2;
+  if (dir === 'N') return { x: node.x,      y: node.y - hh, dir: 'N' };
+  if (dir === 'S') return { x: node.x,      y: node.y + hh, dir: 'S' };
+  if (dir === 'E') return { x: node.x + hw, y: node.y,      dir: 'E' };
+                   return { x: node.x - hw, y: node.y,      dir: 'W' };
+}
+
+function ceNearestAnchor(node, refPt) {
+  let best = null, bestD = Infinity;
+  ['N','S','E','W'].forEach(dir => {
+    const a = ceAnchor(node, dir);
+    const d = Math.hypot(a.x - refPt.x, a.y - refPt.y);
+    if (d < bestD) { bestD = d; best = a; }
+  });
+  return best;
+}
+
+// ── Add Node modal ────────────────────────────────────────────────────────────
+
+function selectCEShape(el) {
+  document.querySelectorAll('.ce-shape-opt').forEach(o => o.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function showCEAddNodeModal(ovId) {
+  _ceActiveModal = ovId;
+  _ceDblClickPos = null;
+  document.getElementById('ce-add-modal-inp').value = '';
+  document.querySelectorAll('.ce-shape-opt').forEach(o => o.classList.remove('selected'));
+  const first = document.querySelector('.ce-shape-opt[data-shape="rounded"]');
+  if (first) first.classList.add('selected');
+  document.getElementById('ce-add-modal').classList.add('open');
+  setTimeout(() => document.getElementById('ce-add-modal-inp').focus(), 60);
+}
+
+function hideCEAddNodeModal() {
+  document.getElementById('ce-add-modal').classList.remove('open');
+  _ceActiveModal = null;
+  _ceDblClickPos = null;
+}
+
+function confirmCEAddNode() {
+  const label = document.getElementById('ce-add-modal-inp').value.trim();
+  if (!label || !_ceActiveModal) { hideCEAddNodeModal(); return; }
+  const ovId = _ceActiveModal;
+  const cfg  = CE_OV_CFG[ovId];
+  const svg  = document.getElementById(cfg.svgId);
+  const sel  = document.querySelector('.ce-shape-opt.selected');
+  const shape = sel ? sel.dataset.shape : 'rounded';
+
+  let x, y;
+  if (_ceDblClickPos) { x = _ceDblClickPos.x; y = _ceDblClickPos.y; }
+  else { const vb = svg.viewBox.baseVal; x = vb.x + vb.width/2; y = vb.y + vb.height/2; }
+
+  const w  = shape === 'circle' ? 80  : Math.min(190, Math.max(90, label.length * 7 + 32));
+  const h  = shape === 'circle' ? 48  : 38;
+  const id = 'ceun' + (++ceUserNodeSeq);
+  const node = { id, ovId, x, y, w, h, label, shape };
+  ceUserNodes.push(node);
+  _renderCEUserNode(node);
+  hideCEAddNodeModal();
+}
+
+// ── Render user node ──────────────────────────────────────────────────────────
+
+function _renderCEUserNode(node) {
+  const cfg     = CE_OV_CFG[node.ovId];
+  const layerEl = document.getElementById(cfg.userLayerId);
+  if (!layerEl) return;
+  const ns = 'http://www.w3.org/2000/svg';
+
+  const g = document.createElementNS(ns, 'g');
+  g.setAttribute('class', 'ce-user-node');
+  g.setAttribute('id',   'cun-' + node.id);
+  g.setAttribute('data-nid', node.id);
+  g.setAttribute('transform', `translate(${node.x},${node.y})`);
+
+  let sh;
+  if (node.shape === 'circle') {
+    sh = document.createElementNS(ns, 'ellipse');
+    sh.setAttribute('cx', '0'); sh.setAttribute('cy', '0');
+    sh.setAttribute('rx', String(node.w / 2));
+    sh.setAttribute('ry', String(node.h / 2));
+  } else {
+    sh = document.createElementNS(ns, 'rect');
+    sh.setAttribute('x', String(-node.w / 2)); sh.setAttribute('y', String(-node.h / 2));
+    sh.setAttribute('width', String(node.w));  sh.setAttribute('height', String(node.h));
+    sh.setAttribute('rx', node.shape === 'rect' ? '0' : '8');
+  }
+  sh.setAttribute('fill', '#ffffff');
+  sh.setAttribute('stroke', '#7b8cbc');
+  sh.setAttribute('stroke-width', '1.5');
+  sh.setAttribute('filter', `url(#${cfg.filterId})`);
+  g.appendChild(sh);
+
+  const txt = document.createElementNS(ns, 'text');
+  txt.setAttribute('x', '0'); txt.setAttribute('y', '0');
+  txt.setAttribute('text-anchor', 'middle');
+  txt.setAttribute('dominant-baseline', 'middle');
+  txt.setAttribute('font-family', 'Segoe UI,system-ui,sans-serif');
+  txt.setAttribute('font-size', '11');
+  txt.setAttribute('font-weight', '600');
+  txt.setAttribute('fill', '#1e3a6e');
+  txt.setAttribute('pointer-events', 'none');
+  txt.textContent = node.label;
+  g.appendChild(txt);
+
+  layerEl.appendChild(g);
+  node._el = g;
+
+  // Drag to move — delta computed in SVG coordinate space so it stays in sync
+  // with the cursor regardless of zoom level or preserveAspectRatio letterboxing.
+  g.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    e.stopPropagation(); e.preventDefault();
+    const svgEl  = document.getElementById(CE_OV_CFG[node.ovId].svgId);
+    const start  = ceClientToSVG(svgEl, e.clientX, e.clientY);
+    const startNx = node.x, startNy = node.y;
+    let moved = false;
+    function onMove(e2) {
+      const cur = ceClientToSVG(svgEl, e2.clientX, e2.clientY);
+      const dx = cur.x - start.x, dy = cur.y - start.y;
+      if (!moved && Math.hypot(dx, dy) < 2) return;
+      moved = true;
+      g.style.cursor = 'grabbing';
+      node.x = startNx + dx;
+      node.y = startNy + dy;
+      g.setAttribute('transform', `translate(${node.x},${node.y})`);
+      _refreshCEConnsForNode(node);
+    }
+    function onUp() {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      g.style.cursor = 'grab';
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  });
+}
+
+// Reroute connections after a user node moves
+function _refreshCEConnsForNode(node) {
+  ceUserConns.forEach(conn => {
+    if (conn.ovId !== node.ovId) return;
+    if (conn.fromId !== node.id && conn.toId !== node.id) return;
+    if (!conn._el) return;
+    const all = ceAllNodes(conn.ovId);
+    const fn  = all.find(n => n.id === conn.fromId);
+    const tn  = all.find(n => n.id === conn.toId);
+    if (!fn || !tn) return;
+    const fa = ceAnchor(fn, conn.fromDir);
+    const ta = ceAnchor(tn, conn.toDir);
+    conn._el.setAttribute('d', connCurve(fa.x, fa.y, fa.dir, ta.x, ta.y, ta.dir));
+  });
+}
+
+// ── Render a connection (anchored bezier, same algorithm as main map) ──────────
+
+function _renderCEUserConn(conn) {
+  const cfg     = CE_OV_CFG[conn.ovId];
+  const layerEl = document.getElementById(cfg.connLayerId);
+  if (!layerEl) return;
+  const all = ceAllNodes(conn.ovId);
+  const fn  = all.find(n => n.id === conn.fromId);
+  const tn  = all.find(n => n.id === conn.toId);
+  if (!fn || !tn) return;
+  const fa = ceAnchor(fn, conn.fromDir);
+  const ta = ceAnchor(tn, conn.toDir);
+  const d  = connCurve(fa.x, fa.y, fa.dir, ta.x, ta.y, ta.dir);
+  const ns = 'http://www.w3.org/2000/svg';
+  const path = document.createElementNS(ns, 'path');
+  path.setAttribute('d', d);
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', conn.color || CONN_COLORS[0]);
+  path.setAttribute('stroke-width', '2');
+  if (conn.style === 'dashed') path.setAttribute('stroke-dasharray', '9 5');
+  path.setAttribute('marker-end', `url(#${cfg.markerId})`);
+  path.setAttribute('opacity', '0.85');
+  path.style.pointerEvents = 'none';
+  layerEl.appendChild(path);
+  conn._el = path;
+}
+
+// ── Per-overlay hover-plus + drag-to-connect (mirrors main map logic) ─────────
+
+function _initCEArrows(ovId) {
+  const cfg    = CE_OV_CFG[ovId];
+  const svg    = document.getElementById(cfg.svgId);
+  if (!svg) return;
+  const st     = ceDrawState[ovId];
+  const ns     = 'http://www.w3.org/2000/svg';
+  const uLayer = document.getElementById(cfg.userLayerId);
+
+  // Tag every built-in clickable node with a unique data-nid for the cache
+  let nidSeq = 0;
+  svg.querySelectorAll('.ce-node, .ce-ellipse-node, .ce-text-node').forEach(el => {
+    el.setAttribute('data-nid', `${ovId}-bi-${++nidSeq}`);
+  });
+
+  // ── Plus indicator (identical style to main map's plusEl) ──────────────────
+  const plusG = document.createElementNS(ns, 'g');
+  plusG.style.display = 'none';
+  plusG.style.cursor  = 'crosshair';
+  const plusCirc = document.createElementNS(ns, 'circle');
+  plusCirc.setAttribute('r', '9');
+  plusCirc.setAttribute('fill', '#e2e9f8');
+  plusCirc.setAttribute('stroke', '#999');
+  plusCirc.setAttribute('stroke-width', '1.5');
+  plusCirc.setAttribute('opacity', '0.97');
+  plusG.appendChild(plusCirc);
+  ['M -4 0 H 4', 'M 0 -4 V 4'].forEach(d => {
+    const ln = document.createElementNS(ns, 'path');
+    ln.setAttribute('d', d);
+    ln.setAttribute('stroke', '#999');
+    ln.setAttribute('stroke-width', '1.4');
+    ln.setAttribute('stroke-linecap', 'round');
+    ln.setAttribute('fill', 'none');
+    ln.style.pointerEvents = 'none';
+    plusG.appendChild(ln);
+  });
+  uLayer.appendChild(plusG);
+
+  function hidePlus() {
+    plusG.style.display = 'none';
+    clearTimeout(st.plusHoverTimer);
+    st.plusHoverTimer = null;
+    st.plusHoverNid   = null;
+    plusG._node = null; plusG._anchor = null;
+  }
+  function showPlus(node, anchor) {
+    plusG.setAttribute('transform', `translate(${anchor.x},${anchor.y})`);
+    plusG._node = node; plusG._anchor = anchor;
+    uLayer.appendChild(plusG); // keep on top
+    plusG.style.display = '';
+  }
+  function clearHL() {
+    if (!st.hlNid) return;
+    const n = ceAllNodes(ovId).find(n => n.id === st.hlNid);
+    if (n && n._el) {
+      const bg = n._el.querySelector('.ce-bg, rect, ellipse');
+      if (bg) bg.style.filter = '';
+    }
+    st.hlNid = null;
+  }
+  function setHL(node) {
+    clearHL();
+    if (node._el) {
+      const bg = node._el.querySelector('.ce-bg, rect, ellipse');
+      if (bg) bg.style.filter = 'brightness(0.87)';
+    }
+    st.hlNid = node.id;
+  }
+  function cancelDraw() {
+    st.conn = null;
+    const prev = document.getElementById(cfg.previewId);
+    if (prev) prev.style.display = 'none';
+    clearHL();
+  }
+
+  // Plus mousedown → start drawing
+  plusG.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    e.stopPropagation(); e.preventDefault();
+    const node = plusG._node, anchor = plusG._anchor;
+    if (!node || !anchor) return;
+    st.conn = { fromNode: node, fromAnchor: anchor };
+    hidePlus();
+    const prev = document.getElementById(cfg.previewId);
+    if (prev) { prev.setAttribute('d', ''); prev.style.display = ''; }
+  });
+
+  // Mousemove: live preview while drawing OR hover detection for plus
+  svg.addEventListener('mousemove', e => {
+    let pt;
+    try { pt = ceClientToSVG(svg, e.clientX, e.clientY); } catch(err) { return; }
+    if (!pt) return;
+
+    if (st.conn) {
+      // ── Drawing: update preview path ──────────────────────────────────────
+      const prev = document.getElementById(cfg.previewId);
+      if (!prev) return;
+      const fa  = st.conn.fromAnchor;
+      const all = ceAllNodes(ovId);
+      let target = null, snapAnchor = null;
+
+      for (const n of all) {
+        if (n.id === st.conn.fromNode.id) continue;
+        if (ceHitNode(n, pt)) { target = n; break; }
+      }
+      if (!target) {
+        const SNAP_R = 22;
+        outer: for (const n of all) {
+          if (n.id === st.conn.fromNode.id) continue;
+          for (const dir of ['N','S','E','W']) {
+            const a = ceAnchor(n, dir);
+            if (Math.hypot(a.x - pt.x, a.y - pt.y) < SNAP_R) {
+              target = n; snapAnchor = a; break outer;
+            }
+          }
+        }
+      }
+
+      let ex = pt.x, ey = pt.y, eDir = null;
+      if (target) {
+        const ta = snapAnchor || ceNearestAnchor(target, fa);
+        ex = ta.x; ey = ta.y; eDir = ta.dir;
+        if (st.hlNid !== target.id) setHL(target);
+      } else { clearHL(); }
+
+      // Reuse main map's connCurve for identical bezier style
+      prev.setAttribute('d', connCurve(fa.x, fa.y, fa.dir, ex, ey, eDir));
+      return;
+    }
+
+    // ── Hover: show plus near node border (with 500 ms delay) ────────────────
+    let found = null;
+    for (const node of ceAllNodes(ovId)) {
+      if (ceDistToBorder(node, pt) <= 18) { found = node; break; }
+    }
+    if (found) {
+      if (st.plusHoverNid !== found.id) {
+        clearTimeout(st.plusHoverTimer);
+        st.plusHoverNid = found.id;
+        const cap = found;
+        st.plusHoverTimer = setTimeout(() => {
+          if (st.plusHoverNid === cap.id) {
+            const pt2 = ceClientToSVG(svg, _lastMx, _lastMy);
+            showPlus(cap, ceNearestAnchor(cap, pt2));
+          }
+        }, 500);
+      }
+    } else if (st.plusHoverNid) { hidePlus(); }
+  });
+
+  // Mouseup on SVG → finish connection if over a valid target
+  svg.addEventListener('mouseup', e => {
+    if (!st.conn) return;
+    e.stopPropagation();
+    const pt  = ceClientToSVG(svg, e.clientX, e.clientY);
+    const all = ceAllNodes(ovId);
+    let target = null;
+    for (const n of all) {
+      if (n.id === st.conn.fromNode.id) continue;
+      if (ceHitNode(n, pt) || ceDistToBorder(n, pt) <= 15) { target = n; break; }
+    }
+    if (!target) { cancelDraw(); return; }
+    const fa = st.conn.fromAnchor;
+    const ta = ceNearestAnchor(target, fa);
+    const conn = {
+      id: 'ceuc' + (++ceUserConnSeq), ovId,
+      fromId: st.conn.fromNode.id, toId: target.id,
+      fromDir: fa.dir, toDir: ta.dir,
+      style: 'solid', color: CONN_COLORS[0],
+    };
+    ceUserConns.push(conn);
+    _renderCEUserConn(conn);
+    cancelDraw();
+  });
+
+  // Window mouseup → cancel if cursor left the SVG
+  window.addEventListener('mouseup', () => { if (st.conn) cancelDraw(); });
+
+  // Double-click empty canvas → add node at that SVG point
+  svg.addEventListener('dblclick', e => {
+    if (e.target.closest('.ce-node,.ce-ellipse-node,.ce-text-node,.ce-user-node')) return;
+    _ceDblClickPos = ceClientToSVG(svg, e.clientX, e.clientY);
+    _ceActiveModal = ovId;
+    document.getElementById('ce-add-modal-inp').value = '';
+    document.getElementById('ce-add-modal').classList.add('open');
+    setTimeout(() => document.getElementById('ce-add-modal-inp').focus(), 60);
+  });
+}
+
+_initCEArrows('ce');
+_initCEArrows('ce17');
+
+// Escape closes modal
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' &&
+      document.getElementById('ce-add-modal').classList.contains('open')) {
+    hideCEAddNodeModal();
+  }
+});
+
+window.showCEAddNodeModal = showCEAddNodeModal;
+window.hideCEAddNodeModal = hideCEAddNodeModal;
+window.confirmCEAddNode   = confirmCEAddNode;
+window.selectCEShape      = selectCEShape;
 
 </script>
 <div id="_boot_loader" style="
